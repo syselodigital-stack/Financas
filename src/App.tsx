@@ -1,0 +1,370 @@
+import { useEffect, useMemo, useState } from 'react'
+import { AllocationBoard } from './components/AllocationBoard'
+import { AppTabs, readTab, storeTab, type TabId } from './components/AppTabs'
+import { CaixaPanel } from './components/CaixaPanel'
+import { DailyLedger } from './components/DailyLedger'
+import { IncomePanel } from './components/IncomePanel'
+import { MoraAlert } from './components/MoraAlert'
+import { PanelHome } from './components/PanelHome'
+import { ProjectionPanel } from './components/ProjectionPanel'
+import { SyncPanel } from './components/SyncPanel'
+import { defaultState } from './lib/defaults'
+import { allocate, hasHousingDelinquency, projectYear, upsertClosing } from './lib/engine'
+import { daysInMonth, formatBRL, isDateInMonth, monthLabel, monthsOfYear, yearOf } from './lib/money'
+import {
+  createHouseholdClient,
+  explainSyncError,
+  householdKey,
+  loadLocalState,
+  loadSupabaseConfig,
+  pullRemoteState,
+  pushRemoteState,
+  saveLocalState,
+  saveSupabaseConfig,
+} from './lib/persist'
+import type { AppState, SupabaseConfig } from './lib/types'
+
+export default function App() {
+  const [state, setState] = useState<AppState>(() => loadLocalState())
+  const [ready, setReady] = useState(false)
+  const [config, setConfig] = useState<SupabaseConfig | null>(() => loadSupabaseConfig())
+  const [familyKey, setFamilyKey] = useState(() => householdKey())
+  const [syncNote, setSyncNote] = useState('Salvo neste navegador')
+  const [notice, setNotice] = useState('')
+  const [tab, setTab] = useState<TabId>(() => readTab())
+
+  const result = useMemo(() => allocate(state), [state])
+  const projection = useMemo(
+    () => projectYear(state.activeMonth, state.reserveOpening, result.sobra, state.closings),
+    [state.activeMonth, state.reserveOpening, state.closings, result.sobra],
+  )
+  const delinquent = hasHousingDelinquency(state.caixa.overdueInstallments)
+  const registered = state.closings.some((closing) => closing.month === state.activeMonth)
+  const yearMonths = monthsOfYear(yearOf(state.activeMonth))
+  const monthEntries = state.dailyExpenses.filter((entry) => entry.date.startsWith(state.activeMonth))
+  const filledDays = new Set(monthEntries.map((entry) => entry.date)).size
+  const dailyTotal = monthEntries.reduce((sum, entry) => sum + entry.amount, 0)
+  const monthPayments = Object.fromEntries(
+    state.settlements
+      .filter((item) => item.month === state.activeMonth)
+      .map((item) => [item.expenseId, { paid: item.paid, installments: item.installments }]),
+  )
+  const payableLines = result.lines.filter((line) => !line.locked && line.due > 0)
+  const paidCount = payableLines.filter((line) => monthPayments[line.expense.id]?.paid).length
+  const installmentCount = payableLines.reduce(
+    (sum, line) => sum + (monthPayments[line.expense.id]?.installments ?? 0),
+    0,
+  )
+  const monthDates = Object.fromEntries(
+    (state.receipts ?? [])
+      .filter((item) => item.month === state.activeMonth)
+      .map((item) => [item.incomeId, item.date]),
+  )
+
+  function openTab(next: TabId) {
+    setTab(next)
+    storeTab(next)
+    window.scrollTo({ top: 0 })
+  }
+
+  useEffect(() => {
+    let cancel = false
+    const current = loadSupabaseConfig()
+    if (!current) {
+      setReady(true)
+      setSyncNote('Salvo neste navegador')
+      return
+    }
+
+    const client = createHouseholdClient(current, familyKey)
+    pullRemoteState(client)
+      .then((remote) => {
+        if (cancel) return
+        if (remote) setState(remote)
+        setSyncNote('Sincronizado com Supabase')
+        setReady(true)
+      })
+      .catch((error: unknown) => {
+        if (cancel) return
+        const text = error instanceof Error ? error.message : 'Falha ao ler o Supabase'
+        setSyncNote(explainSyncError(text))
+        setReady(true)
+      })
+
+    return () => {
+      cancel = true
+    }
+  }, [config, familyKey])
+
+  useEffect(() => {
+    if (!ready) return
+    saveLocalState(state)
+    const current = loadSupabaseConfig()
+    if (!current) return
+
+    const client = createHouseholdClient(current, familyKey)
+    const timer = window.setTimeout(() => {
+      pushRemoteState(client, state)
+        .then(() => setSyncNote('Sincronizado com Supabase'))
+        .catch((error: unknown) => {
+          const text = error instanceof Error ? error.message : 'Falha ao salvar no Supabase'
+          setSyncNote(explainSyncError(text))
+        })
+    }, 700)
+
+    return () => window.clearTimeout(timer)
+  }, [state, ready, config, familyKey])
+
+  function registerMonth() {
+    const snapshot = allocate(state)
+    setState(upsertClosing(state, snapshot))
+    setNotice(
+      `${monthLabel(state.activeMonth)} registrado. A sobra de ${formatBRL(snapshot.sobra)} entrou na projeção do fundo.`,
+    )
+  }
+
+  return (
+    <div className="min-h-screen">
+      <a
+        href="#conteudo"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-3 focus:left-3 focus:z-10 focus:rounded-full focus:bg-white focus:px-3 focus:py-2"
+      >
+        Ir para o conteúdo
+      </a>
+
+      <header className="relative overflow-hidden bg-teal-deep text-paper">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(232,194,122,0.2),transparent_36%)]" />
+        <div className="relative mx-auto flex max-w-6xl flex-col gap-5 px-4 py-5 md:px-6 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-xs font-bold tracking-[0.22em] text-[#e8c27a] uppercase">Reorganização familiar</p>
+            <h1 className="mt-2 max-w-xl font-serif text-3xl leading-none md:text-5xl">
+              O essencial primeiro. A sobra vira reserva.
+            </h1>
+            <p className="mt-3 max-w-xl text-sm leading-6 text-[#d7e4e1]">
+              Receita, diário e contas ficam em abas. A ordem continua do nível 1 ao nível 3.
+            </p>
+          </div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <label className="block">
+              <span className="mb-1 block text-xs font-semibold tracking-wide text-[#d7e4e1] uppercase">Competência</span>
+              <select
+                value={state.activeMonth}
+                className="rounded-2xl bg-white px-3 py-2.5 text-ink ring-1 ring-transparent"
+                onChange={(event) => setState((current) => ({ ...current, activeMonth: event.target.value }))}
+              >
+                {yearMonths.map((month) => (
+                  <option key={month} value={month}>
+                    {monthLabel(month)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={registerMonth}
+              className="rounded-full bg-[#e8c27a] px-4 py-3 text-sm font-bold text-teal-deep"
+            >
+              {registered ? 'Atualizar registro' : 'Registrar entrada'} de {formatBRL(result.totalIncome)}
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {delinquent && <MoraAlert caixa={state.caixa} onOpen={() => openTab('mapa')} />}
+      <AppTabs
+        tab={tab}
+        onChange={openTab}
+        badges={{ caixa: delinquent, mapa: result.sombra > 0 }}
+      />
+
+      <main id="conteudo" className="mx-auto max-w-6xl px-4 py-4 pb-24 md:px-6 md:py-6 md:pb-10">
+        {notice && (
+          <p className="mb-4 rounded-2xl bg-sage-soft px-4 py-3 text-sm font-medium text-sage" role="status">
+            {notice}
+          </p>
+        )}
+
+        <div role="tabpanel" id={`secao-${tab}`} aria-labelledby={`aba-${tab}`}>
+          {tab === 'painel' && (
+            <PanelHome
+              result={result}
+              incomes={state.incomes}
+              dates={monthDates}
+              filledDays={filledDays}
+              monthDays={daysInMonth(state.activeMonth)}
+              dailyTotal={dailyTotal}
+              registered={registered}
+              paidCount={paidCount}
+              payableCount={payableLines.length}
+              installmentCount={installmentCount}
+              onOpen={openTab}
+            />
+          )}
+
+          {tab === 'caixa' && (
+            <div className="grid gap-4 lg:grid-cols-2">
+              <IncomePanel
+                incomes={state.incomes}
+                total={result.totalIncome}
+                month={state.activeMonth}
+                dates={monthDates}
+                onAmount={(id, amount) =>
+                  setState((current) => ({
+                    ...current,
+                    incomes: current.incomes.map((income) => (income.id === id ? { ...income, amount } : income)),
+                  }))
+                }
+                onHolder={(id, holder) =>
+                  setState((current) => ({
+                    ...current,
+                    incomes: current.incomes.map((income) => (income.id === id ? { ...income, holder } : income)),
+                  }))
+                }
+                onDate={(id, date) =>
+                  setState((current) => {
+                    const receipts = current.receipts ?? []
+                    const rest = receipts.filter((item) => item.month !== current.activeMonth || item.incomeId !== id)
+                    if (!date || !isDateInMonth(date, current.activeMonth)) {
+                      return { ...current, receipts: rest }
+                    }
+                    return {
+                      ...current,
+                      receipts: [...rest, { month: current.activeMonth, incomeId: id, date }],
+                    }
+                  })
+                }
+                onAdd={() =>
+                  setState((current) => ({
+                    ...current,
+                    incomes: [
+                      ...current.incomes,
+                      {
+                        id: crypto.randomUUID(),
+                        label: 'Outra entrada',
+                        holder: '',
+                        amount: 0,
+                        custom: true,
+                      },
+                    ],
+                  }))
+                }
+                onRemove={(id) =>
+                  setState((current) => ({
+                    ...current,
+                    incomes: current.incomes.filter((income) => income.id !== id || !income.custom),
+                    receipts: (current.receipts ?? []).filter((item) => item.incomeId !== id),
+                  }))
+                }
+              />
+              <CaixaPanel caixa={state.caixa} onChange={(caixa) => setState((current) => ({ ...current, caixa }))} />
+            </div>
+          )}
+
+          {tab === 'diario' && (
+            <DailyLedger
+              month={state.activeMonth}
+              entries={state.dailyExpenses}
+              onAdd={(entry) =>
+                setState((current) => ({
+                  ...current,
+                  dailyExpenses: [...current.dailyExpenses, { ...entry, id: crypto.randomUUID() }],
+                }))
+              }
+              onRemove={(id) =>
+                setState((current) => ({
+                  ...current,
+                  dailyExpenses: current.dailyExpenses.filter((item) => item.id !== id),
+                }))
+              }
+            />
+          )}
+
+          {tab === 'mapa' && (
+            <AllocationBoard
+              result={result}
+              delinquent={delinquent}
+              monthLabel={monthLabel(state.activeMonth)}
+              payments={monthPayments}
+              onAmount={(id, amount) =>
+                setState((current) => ({
+                  ...current,
+                  expenses: current.expenses.map((expense) => (expense.id === id ? { ...expense, amount } : expense)),
+                }))
+              }
+              onPayment={(id, patch) =>
+                setState((current) => {
+                  const existing = current.settlements.find(
+                    (item) => item.month === current.activeMonth && item.expenseId === id,
+                  )
+                  const next = {
+                    month: current.activeMonth,
+                    expenseId: id,
+                    paid: patch.paid ?? existing?.paid ?? false,
+                    installments: patch.installments ?? existing?.installments ?? 0,
+                  }
+                  const rest = current.settlements.filter(
+                    (item) => item.month !== current.activeMonth || item.expenseId !== id,
+                  )
+                  return {
+                    ...current,
+                    settlements: !next.paid && next.installments <= 0 ? rest : [...rest, next],
+                  }
+                })
+              }
+            />
+          )}
+
+          {tab === 'fundo' && (
+            <ProjectionPanel
+              opening={state.reserveOpening}
+              points={projection}
+              onOpening={(reserveOpening) => setState((current) => ({ ...current, reserveOpening }))}
+              onClear={(month) =>
+                setState((current) => ({
+                  ...current,
+                  closings: current.closings.filter((closing) => closing.month !== month),
+                }))
+              }
+            />
+          )}
+
+          {tab === 'ajustes' && (
+            <div className="space-y-4">
+              <SyncPanel
+                config={config}
+                familyKey={familyKey}
+                note={syncNote}
+                onFamilyKey={setFamilyKey}
+                onSave={(next) => {
+                  saveSupabaseConfig(next)
+                  setReady(false)
+                  setConfig(next)
+                }}
+                onClear={() => {
+                  saveSupabaseConfig(null)
+                  setConfig(null)
+                  setSyncNote('Salvo neste navegador')
+                }}
+              />
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  className="text-sm font-semibold text-muted underline-offset-2 hover:underline"
+                  onClick={() => {
+                    if (window.confirm('Restaurar rendas, datas, despesas, pagamentos, diário e contrato para o mapa inicial?')) {
+                      const fresh = defaultState()
+                      setState(fresh)
+                      setNotice('Mapa inicial restaurado.')
+                    }
+                  }}
+                >
+                  Restaurar mapa inicial
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </main>
+    </div>
+  )
+}
