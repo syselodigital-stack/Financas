@@ -15,6 +15,7 @@ export interface ExpenseItem {
   amount: number
   priority: Priority
   editable?: boolean
+  custom?: boolean
 }
 
 export type DailyCategory = 'alimentacao' | 'combustivel' | 'outros'
@@ -71,6 +72,7 @@ export interface AppState {
   settlements: ExpenseSettlement[]
   receipts: IncomeReceipt[]
   expenseDues: ExpenseDue[]
+  removedExpenseIds: string[]
 }
 
 export type CoverageStatus = 'pending' | 'covered' | 'partial' | 'uncovered'

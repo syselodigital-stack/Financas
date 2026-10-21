@@ -66,6 +66,7 @@ export function defaultState(date = new Date()): AppState {
     settlements: [],
     receipts: [],
     expenseDues: [],
+    removedExpenseIds: [],
   }
 }
 
@@ -87,7 +88,9 @@ export function sanitizeState(input: unknown): AppState {
   const receiptRows = Array.isArray(raw.receipts) ? raw.receipts : []
   const dueRows = Array.isArray(raw.expenseDues) ? raw.expenseDues : []
   const caixa = asRecord(raw.caixa)
-  const expenseIds = new Set(base.expenses.map((expense) => expense.id))
+  const removedExpenseIds = sanitizeRemovedExpenses(raw.removedExpenseIds)
+  const expenses = sanitizeExpenses(expenseRows, new Set(removedExpenseIds))
+  const expenseIds = new Set(expenses.map((expense) => expense.id))
   const incomes = [
     ...base.incomes.map((income) => {
       const saved = incomeRows.map(asRecord).find((row) => row?.id === income.id)
@@ -102,13 +105,7 @@ export function sanitizeState(input: unknown): AppState {
 
   return {
     incomes,
-    expenses: base.expenses.map((expense) => {
-      const saved = expenseRows.map(asRecord).find((row) => row?.id === expense.id)
-      return {
-        ...expense,
-        amount: clampMoney(typeof saved?.amount === 'number' ? saved.amount : expense.amount),
-      }
-    }),
+    expenses,
     caixa: {
       overdueInstallments: Math.max(
         0,
@@ -148,7 +145,66 @@ export function sanitizeState(input: unknown): AppState {
       new Set(incomes.map((income) => income.id)),
     ),
     expenseDues: sanitizeExpenseDues(dueRows, expenseIds),
+    removedExpenseIds,
   }
+}
+
+const DEFAULT_EXPENSE_IDS = new Set(DEFAULT_EXPENSES.map((expense) => expense.id))
+
+function sanitizeRemovedExpenses(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return [...new Set(value.filter((id): id is string => typeof id === 'string' && DEFAULT_EXPENSE_IDS.has(id)))]
+}
+
+function readPriority(value: unknown, fallback: ExpenseItem['priority']): ExpenseItem['priority'] {
+  return value === 1 || value === 2 || value === 3 ? value : fallback
+}
+
+function readName(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') return fallback
+  const name = value.trim().slice(0, 80)
+  return name || fallback
+}
+
+function sanitizeExpenses(rows: unknown[], removed: Set<string>): ExpenseItem[] {
+  const saved = rows.map(asRecord)
+  const defaults = DEFAULT_EXPENSES.filter((expense) => !removed.has(expense.id)).map((expense) => {
+    const row = saved.find((item) => item?.id === expense.id)
+    return {
+      ...expense,
+      name: readName(row?.name, expense.name),
+      amount: clampMoney(typeof row?.amount === 'number' ? row.amount : expense.amount),
+      priority: readPriority(row?.priority, expense.priority),
+    }
+  })
+
+  return [...defaults, ...sanitizeExtraExpenses(saved)]
+}
+
+function sanitizeExtraExpenses(rows: Array<Record<string, unknown> | null>): ExpenseItem[] {
+  const seen = new Set<string>()
+  const extras: ExpenseItem[] = []
+
+  for (const row of rows) {
+    if (!row || row.custom !== true || typeof row.id !== 'string' || !row.id || DEFAULT_EXPENSE_IDS.has(row.id) || seen.has(row.id)) {
+      continue
+    }
+    const name = typeof row.name === 'string' ? row.name.trim().slice(0, 80) : ''
+    const amount = clampMoney(typeof row.amount === 'number' ? row.amount : 0)
+    if (!name && amount <= 0) continue
+    seen.add(row.id)
+    extras.push({
+      id: row.id,
+      name: name || 'Conta',
+      detail: typeof row.detail === 'string' ? row.detail.trim().slice(0, 80) : '',
+      amount,
+      priority: readPriority(row.priority, 3),
+      custom: true,
+      editable: true,
+    })
+  }
+
+  return extras
 }
 
 function sanitizeReceipts(rows: unknown[], incomeIds: Set<string>): IncomeReceipt[] {

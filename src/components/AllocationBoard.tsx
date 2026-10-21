@@ -22,8 +22,12 @@ interface AllocationBoardProps {
   payments: Record<string, MonthPayment>
   dueDates: Record<string, string>
   onAmount: (id: string, amount: number) => void
+  onName: (id: string, name: string) => void
+  onPriority: (id: string, priority: Priority) => void
   onPayment: (id: string, patch: Partial<MonthPayment>) => void
   onDueDate: (id: string, date: string) => void
+  onAdd: () => void
+  onRemove: (id: string) => void
 }
 
 export function AllocationBoard({
@@ -34,8 +38,12 @@ export function AllocationBoard({
   payments,
   dueDates,
   onAmount,
+  onName,
+  onPriority,
   onPayment,
   onDueDate,
+  onAdd,
+  onRemove,
 }: AllocationBoardProps) {
   const payable = result.lines.filter((line) => canSettle(line))
   const paidCount = payable.filter((line) => payments[line.expense.id]?.paid).length
@@ -60,15 +68,24 @@ export function AllocationBoard({
           <div>
             <h2 className="font-serif text-2xl">Abatimento automático</h2>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">
-              A receita percorre o nível 1, depois o nível 2 e o nível 3. O dia de cada conta coloca esse
-              valor no calendário de {monthLabel}.
+              A receita percorre o nível 1, depois o nível 2 e o nível 3. O nome, o valor e o nível de cada
+              conta podem mudar. O dia coloca o valor no calendário de {monthLabel}.
             </p>
           </div>
-          <p className="text-sm font-semibold text-ink">
-            {payable.length === 0
-              ? 'Nenhuma despesa com valor neste mês.'
-              : `${paidCount} de ${payable.length} pagas em ${monthLabel}.`}
-          </p>
+          <div className="flex flex-col items-start gap-2 md:items-end">
+            <p className="text-sm font-semibold text-ink">
+              {payable.length === 0
+                ? 'Nenhuma despesa com valor neste mês.'
+                : `${paidCount} de ${payable.length} pagas em ${monthLabel}.`}
+            </p>
+            <button
+              type="button"
+              onClick={onAdd}
+              className="rounded-full bg-teal px-4 py-2 text-sm font-semibold text-white"
+            >
+              Incluir conta
+            </button>
+          </div>
         </div>
 
         <div className="mt-5">
@@ -131,7 +148,10 @@ export function AllocationBoard({
                   payment={payments[line.expense.id]}
                   dueDate={dueDates[line.expense.id] ?? ''}
                   onAmount={onAmount}
+                  onName={onName}
+                  onPriority={onPriority}
                   onPayment={onPayment}
+                  onRemove={onRemove}
                   onDueDate={(date) => onDueDate(line.expense.id, date)}
                 />
               ))}
@@ -164,11 +184,14 @@ export function AllocationBoard({
                     >
                       <td className="px-4 py-4 font-semibold tabular-nums">{String(line.order).padStart(2, '0')}</td>
                       <td className="px-4 py-4">
-                        <span className="block font-semibold">{line.expense.name}</span>
-                        <span className="text-muted">{line.expense.detail}</span>
+                        <AccountName line={line} fieldId={`expense-name-desktop-${line.expense.id}`} onName={onName} onRemove={onRemove} />
                       </td>
                       <td className="px-4 py-4">
-                        <LevelBadge priority={line.expense.priority} />
+                        {line.locked ? (
+                          <LevelBadge priority={line.expense.priority} />
+                        ) : (
+                          <LevelSelect line={line} onPriority={onPriority} />
+                        )}
                       </td>
                       <td className="px-4 py-4">
                         <AmountCell line={line} fieldId={`expense-desktop-${line.expense.id}`} onAmount={onAmount} />
@@ -214,8 +237,11 @@ function ExpenseCard({
   payment,
   dueDate,
   onAmount,
+  onName,
+  onPriority,
   onPayment,
   onDueDate,
+  onRemove,
 }: {
   line: AllocationLine
   month: string
@@ -223,21 +249,28 @@ function ExpenseCard({
   payment?: MonthPayment
   dueDate: string
   onAmount: (id: string, amount: number) => void
+  onName: (id: string, name: string) => void
+  onPriority: (id: string, priority: Priority) => void
   onPayment: (id: string, patch: Partial<MonthPayment>) => void
   onDueDate: (date: string) => void
+  onRemove: (id: string) => void
 }) {
   return (
     <li className={`rounded-2xl border border-line p-4 ${emphasized ? 'bg-alert-soft' : 'bg-paper/40'}`}>
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs font-bold text-muted">
-            {String(line.order).padStart(2, '0')} · Nível {line.expense.priority}
-          </p>
-          <p className="font-semibold">{line.expense.name}</p>
-          <p className="text-sm text-muted">{line.expense.detail}</p>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-bold text-muted">{String(line.order).padStart(2, '0')}</p>
+          <div className="mt-1">
+            <AccountName line={line} fieldId={`expense-name-${line.expense.id}`} onName={onName} onRemove={onRemove} />
+          </div>
         </div>
         <StatusBadge line={line} paid={payment?.paid ?? false} />
       </div>
+      {!line.locked && (
+        <div className="mt-3">
+          <LevelSelect line={line} onPriority={onPriority} />
+        </div>
+      )}
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <AmountCell line={line} fieldId={`expense-${line.expense.id}`} onAmount={onAmount} />
         {!line.locked && (
@@ -253,6 +286,70 @@ function ExpenseCard({
         </div>
       )}
     </li>
+  )
+}
+
+function AccountName({
+  line,
+  fieldId,
+  onName,
+  onRemove,
+}: {
+  line: AllocationLine
+  fieldId: string
+  onName: (id: string, name: string) => void
+  onRemove: (id: string) => void
+}) {
+  if (line.locked) {
+    return (
+      <div>
+        <span className="block font-semibold">{line.expense.name}</span>
+        <span className="text-sm text-muted">{line.expense.detail}</span>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <input
+        id={fieldId}
+        data-expense-name={line.expense.id}
+        aria-label={`Nome da conta ${line.expense.name || 'nova'}`}
+        value={line.expense.name}
+        maxLength={80}
+        onChange={(event) => onName(line.expense.id, event.target.value)}
+        className="w-full rounded-xl bg-white px-2 py-1.5 text-sm font-semibold ring-1 ring-line outline-none focus:ring-2 focus:ring-teal"
+      />
+      {line.expense.detail && <p className="mt-1 text-sm text-muted">{line.expense.detail}</p>}
+      <button
+        type="button"
+        onClick={() => onRemove(line.expense.id)}
+        className="mt-1 text-xs font-semibold text-alert"
+      >
+        Excluir
+      </button>
+    </div>
+  )
+}
+
+function LevelSelect({
+  line,
+  onPriority,
+}: {
+  line: AllocationLine
+  onPriority: (id: string, priority: Priority) => void
+}) {
+  return (
+    <select
+      aria-label={`Nível de ${line.expense.name || 'conta'}`}
+      value={line.expense.priority}
+      onChange={(event) => onPriority(line.expense.id, Number(event.target.value) as Priority)}
+      className="rounded-xl bg-white px-2 py-1.5 text-sm ring-1 ring-line outline-none focus:ring-2 focus:ring-teal"
+    >
+      <option value={1}>Nível 1</option>
+      <option value={2}>Nível 2</option>
+      <option value={3}>Nível 3</option>
+    </select>
   )
 }
 
@@ -290,7 +387,7 @@ function AmountCell({
   fieldId: string
   onAmount: (id: string, amount: number) => void
 }) {
-  const editable = !line.locked && line.expense.editable
+  const editable = !line.locked
   return (
     <div className="max-w-[11rem]">
       {editable ? (

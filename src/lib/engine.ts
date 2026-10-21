@@ -24,7 +24,7 @@ export function allocate(
   const expenses = state.expenses.map((expense) => ({ ...expense }))
   if (otherDaily > 0) {
     const waterIndex = expenses.findIndex((expense) => expense.id === 'agua')
-    expenses.splice(waterIndex + 1, 0, {
+    expenses.splice(waterIndex === -1 ? expenses.length : waterIndex + 1, 0, {
       id: 'diarias-outros',
       name: 'Outros do dia',
       detail: 'Lançamentos avulsos do mês',

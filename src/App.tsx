@@ -323,6 +323,52 @@ export default function App() {
                     expenses: current.expenses.map((expense) => (expense.id === id ? { ...expense, amount } : expense)),
                   }))
                 }
+                onName={(id, name) =>
+                  setState((current) => ({
+                    ...current,
+                    expenses: current.expenses.map((expense) =>
+                      expense.id === id ? { ...expense, name: name.slice(0, 80) } : expense,
+                    ),
+                  }))
+                }
+                onPriority={(id, priority) =>
+                  setState((current) => ({
+                    ...current,
+                    expenses: current.expenses.map((expense) =>
+                      expense.id === id ? { ...expense, priority } : expense,
+                    ),
+                  }))
+                }
+                onAdd={() => {
+                  const id = crypto.randomUUID()
+                  setState((current) => ({
+                    ...current,
+                    expenses: [
+                      ...current.expenses,
+                      { id, name: '', detail: '', amount: 0, priority: 3, custom: true, editable: true },
+                    ],
+                  }))
+                  queueMicrotask(() => {
+                    const fields = document.querySelectorAll<HTMLElement>(`[data-expense-name="${id}"]`)
+                    const visible = [...fields].find((field) => field.getClientRects().length > 0)
+                    visible?.focus()
+                  })
+                }}
+                onRemove={(id) => {
+                  const expense = state.expenses.find((item) => item.id === id)
+                  if (!expense) return
+                  const label = expense.name.trim() || 'esta conta'
+                  if (!window.confirm(`Excluir ${label} do mapa? Ela sai de todos os meses.`)) return
+                  setState((current) => ({
+                    ...current,
+                    expenses: current.expenses.filter((item) => item.id !== id),
+                    removedExpenseIds: expense.custom
+                      ? (current.removedExpenseIds ?? [])
+                      : [...new Set([...(current.removedExpenseIds ?? []), id])],
+                    settlements: current.settlements.filter((item) => item.expenseId !== id),
+                    expenseDues: (current.expenseDues ?? []).filter((item) => item.expenseId !== id),
+                  }))
+                }}
                 onPayment={(id, patch) =>
                   setState((current) => {
                     const existing = current.settlements.find(
