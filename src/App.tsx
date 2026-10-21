@@ -1,15 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AllocationBoard } from './components/AllocationBoard'
 import { AppTabs, readTab, storeTab, type TabId } from './components/AppTabs'
-import { CaixaPanel } from './components/CaixaPanel'
 import { DailyLedger } from './components/DailyLedger'
 import { IncomePanel } from './components/IncomePanel'
-import { MoraAlert } from './components/MoraAlert'
 import { PanelHome } from './components/PanelHome'
 import { ProjectionPanel } from './components/ProjectionPanel'
 import { SyncPanel } from './components/SyncPanel'
 import { defaultState } from './lib/defaults'
-import { allocate, hasHousingDelinquency, projectYear, upsertClosing } from './lib/engine'
+import { allocate, projectYear, upsertClosing } from './lib/engine'
 import { daysInMonth, formatBRL, isDateInMonth, monthLabel, monthsOfYear, yearOf } from './lib/money'
 import {
   createHouseholdClient,
@@ -38,7 +36,6 @@ export default function App() {
     () => projectYear(state.activeMonth, state.reserveOpening, result.sobra, state.closings),
     [state.activeMonth, state.reserveOpening, state.closings, result.sobra],
   )
-  const delinquent = hasHousingDelinquency(state.caixa.overdueInstallments)
   const registered = state.closings.some((closing) => closing.month === state.activeMonth)
   const yearMonths = monthsOfYear(yearOf(state.activeMonth))
   const monthEntries = state.dailyExpenses.filter((entry) => entry.date.startsWith(state.activeMonth))
@@ -199,12 +196,7 @@ export default function App() {
         </div>
       </header>
 
-      {delinquent && <MoraAlert caixa={state.caixa} onOpen={() => openTab('diario')} />}
-      <AppTabs
-        tab={tab}
-        onChange={openTab}
-        badges={{ caixa: delinquent, diario: result.sombra > 0 }}
-      />
+      <AppTabs tab={tab} onChange={openTab} badges={{ diario: result.sombra > 0 }} />
 
       <main id="conteudo" className="mx-auto max-w-6xl px-4 py-4 pb-24 md:px-6 md:py-6 md:pb-10">
         {notice && (
@@ -231,7 +223,7 @@ export default function App() {
           )}
 
           {tab === 'caixa' && (
-            <div className="grid gap-4 lg:grid-cols-2">
+            <div className="mx-auto max-w-3xl">
               <IncomePanel
                 incomes={state.incomes}
                 total={result.totalIncome}
@@ -285,7 +277,6 @@ export default function App() {
                   }))
                 }
               />
-              <CaixaPanel caixa={state.caixa} onChange={(caixa) => setState((current) => ({ ...current, caixa }))} />
             </div>
           )}
 
@@ -312,7 +303,6 @@ export default function App() {
               />
               <AllocationBoard
                 result={result}
-                delinquent={delinquent}
                 month={state.activeMonth}
                 monthLabel={monthLabel(state.activeMonth)}
                 payments={monthPayments}
@@ -436,7 +426,7 @@ export default function App() {
                   type="button"
                   className="text-sm font-semibold text-muted underline-offset-2 hover:underline"
                   onClick={() => {
-                    if (window.confirm('Restaurar rendas, datas, despesas, pagamentos, diário e contrato para o mapa inicial?')) {
+                    if (window.confirm('Restaurar rendas, datas, despesas, pagamentos e diário para o mapa inicial?')) {
                       const fresh = defaultState()
                       setState(fresh)
                       setNotice('Mapa inicial restaurado.')

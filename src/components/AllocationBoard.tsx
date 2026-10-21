@@ -17,7 +17,6 @@ interface MonthPayment {
 
 interface AllocationBoardProps {
   result: AllocationResult
-  delinquent: boolean
   month: string
   monthLabel: string
   payments: Record<string, MonthPayment>
@@ -33,7 +32,6 @@ interface AllocationBoardProps {
 
 export function AllocationBoard({
   result,
-  delinquent,
   month,
   monthLabel,
   payments,
@@ -149,7 +147,6 @@ export function AllocationBoard({
                   key={line.expense.id}
                   line={line}
                   month={month}
-                  emphasized={delinquent && line.expense.id === 'caixa'}
                   payment={payments[line.expense.id]}
                   dueDate={dueDates[line.expense.id] ?? ''}
                   onAmount={onAmount}
@@ -178,11 +175,7 @@ export function AllocationBoard({
                     <tr
                       key={line.expense.id}
                       className={`border-b border-line last:border-b-0 ${
-                        delinquent && line.expense.id === 'caixa'
-                          ? 'bg-alert-soft'
-                          : index % 2 === 1
-                            ? 'bg-paper/70'
-                            : 'bg-card'
+                        index % 2 === 1 ? 'bg-paper/70' : 'bg-card'
                       }`}
                     >
                       <td className="px-4 py-4 font-semibold tabular-nums">{String(line.order).padStart(2, '0')}</td>
@@ -232,7 +225,6 @@ export function AllocationBoard({
 function ExpenseCard({
   line,
   month,
-  emphasized,
   payment,
   dueDate,
   onAmount,
@@ -243,7 +235,6 @@ function ExpenseCard({
 }: {
   line: AllocationLine
   month: string
-  emphasized: boolean
   payment?: MonthPayment
   dueDate: string
   onAmount: (id: string, amount: number) => void
@@ -253,7 +244,7 @@ function ExpenseCard({
   onRemove: (id: string) => void
 }) {
   return (
-    <li className={`rounded-2xl border border-line p-4 ${emphasized ? 'bg-alert-soft' : 'bg-paper/40'}`}>
+    <li className="rounded-2xl border border-line bg-paper/40 p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-xs font-bold text-muted">{String(line.order).padStart(2, '0')}</p>

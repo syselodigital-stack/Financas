@@ -164,9 +164,3 @@ export function projectYear(
     }
   })
 }
-
-export const MORA_THRESHOLD = 3
-
-export function hasHousingDelinquency(overdueInstallments: number): boolean {
-  return overdueInstallments >= MORA_THRESHOLD
-}
