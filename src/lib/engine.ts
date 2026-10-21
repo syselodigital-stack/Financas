@@ -20,8 +20,27 @@ export function allocate(
   const dailyExpenses = state.dailyExpenses ?? []
   const foodDaily = dailyCents(dailyExpenses, state.activeMonth, 'alimentacao')
   const fuelDaily = dailyCents(dailyExpenses, state.activeMonth, 'combustivel')
+  const billDaily = dailyCents(dailyExpenses, state.activeMonth, 'contas')
   const otherDaily = dailyCents(dailyExpenses, state.activeMonth, 'outros')
   const expenses = state.expenses.map((expense) => ({ ...expense }))
+  if (foodDaily > 0 && !expenses.some((expense) => expense.id === 'alimentacao')) {
+    expenses.push({
+      id: 'diarias-alimentacao',
+      name: 'Alimentação do dia',
+      detail: 'Lançamentos do mês',
+      amount: fromCents(foodDaily),
+      priority: 1,
+    })
+  }
+  if (fuelDaily > 0 && !expenses.some((expense) => expense.id === 'combustivel')) {
+    expenses.push({
+      id: 'diarias-combustivel',
+      name: 'Combustível do dia',
+      detail: 'Lançamentos do mês',
+      amount: fromCents(fuelDaily),
+      priority: 1,
+    })
+  }
   if (otherDaily > 0) {
     const waterIndex = expenses.findIndex((expense) => expense.id === 'agua')
     expenses.splice(waterIndex === -1 ? expenses.length : waterIndex + 1, 0, {
@@ -32,6 +51,15 @@ export function allocate(
       priority: 1,
     })
   }
+  if (billDaily > 0) {
+    expenses.push({
+      id: 'diarias-contas',
+      name: 'Contas do dia',
+      detail: 'Lançamentos do mês',
+      amount: fromCents(billDaily),
+      priority: 3,
+    })
+  }
 
   const totalIncomeCents = state.incomes.reduce((sum, income) => sum + toCents(income.amount), 0)
   let balance = totalIncomeCents
@@ -40,11 +68,10 @@ export function allocate(
   let sombra = 0
 
   const lines = orderedExpenses(expenses).map((expense, index) => {
-    const extra =
-      expense.id === 'alimentacao' ? foodDaily : expense.id === 'combustivel' ? fuelDaily : expense.id === 'diarias-outros' ? otherDaily : 0
-    const due = toCents(expense.amount) + (expense.id === 'diarias-outros' ? 0 : extra)
+    const extra = expense.id === 'alimentacao' ? foodDaily : expense.id === 'combustivel' ? fuelDaily : 0
+    const due = toCents(expense.amount) + extra
     totalDue += due
-    const locked = expense.id === 'diarias-outros'
+    const locked = expense.id.startsWith('diarias-')
 
     if (due === 0) {
       return {
@@ -74,7 +101,7 @@ export function allocate(
       expense,
       order: index + 1,
       due: fromCents(due),
-      dailyAmount: fromCents(expense.id === 'diarias-outros' ? otherDaily : extra),
+        dailyAmount: fromCents(extra),
       locked,
       allocated: fromCents(allocated),
       uncovered: fromCents(uncovered),

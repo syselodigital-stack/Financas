@@ -16,7 +16,7 @@ export function MoraAlert({ caixa, onOpen }: { caixa: CaixaContract; onOpen: () 
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[#6f2432]">
             Quite primeiro a parcela mais antiga
             {dueDate ? `, vencida em ${dueDate},` : ''} no valor de {formatBRL(amount)}, antes de
-            cobrir as demais despesas. O financiamento é o primeiro item do nível 1.
+            cobrir as demais despesas. O financiamento continua a primeira conta.
           </p>
         </div>
         <button

@@ -170,7 +170,7 @@ export default function App() {
               O essencial primeiro. A sobra vira reserva.
             </h1>
             <p className="mt-3 max-w-xl text-sm leading-6 text-[#d7e4e1]">
-              Receita, diário e contas ficam em abas. A ordem continua do nível 1 ao nível 3.
+              Receita, diário e contas ficam em abas. O lançamento do dia entra em alimentação, combustível, contas ou outros.
             </p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -317,6 +317,7 @@ export default function App() {
                 monthLabel={monthLabel(state.activeMonth)}
                 payments={monthPayments}
                 dueDates={billDates}
+                entries={state.dailyExpenses}
                 onAmount={(id, amount) =>
                   setState((current) => ({
                     ...current,
@@ -328,14 +329,6 @@ export default function App() {
                     ...current,
                     expenses: current.expenses.map((expense) =>
                       expense.id === id ? { ...expense, name: name.slice(0, 80) } : expense,
-                    ),
-                  }))
-                }
-                onPriority={(id, priority) =>
-                  setState((current) => ({
-                    ...current,
-                    expenses: current.expenses.map((expense) =>
-                      expense.id === id ? { ...expense, priority } : expense,
                     ),
                   }))
                 }

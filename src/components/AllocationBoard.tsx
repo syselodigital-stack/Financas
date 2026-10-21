@@ -1,12 +1,13 @@
 import { CurrencyField } from './CurrencyField'
-import { LEVELS } from '../lib/defaults'
-import { daysInMonth, formatBRL } from '../lib/money'
-import type { AllocationLine, AllocationResult, Priority } from '../lib/types'
+import { SPEND_GROUPS, spendGroup, type SpendGroup } from '../lib/defaults'
+import { daysInMonth, formatBRL, formatDueDate } from '../lib/money'
+import type { AllocationLine, AllocationResult, DailyExpense } from '../lib/types'
 
-const LEVEL_COLOR: Record<Priority, string> = {
-  1: '#0f766e',
-  2: '#1e4d6b',
-  3: '#9a5b2f',
+const GROUP_COLOR: Record<SpendGroup, string> = {
+  alimentacao: '#0f766e',
+  combustivel: '#1e4d6b',
+  contas: '#9a5b2f',
+  outros: '#6b6258',
 }
 
 interface MonthPayment {
@@ -21,9 +22,9 @@ interface AllocationBoardProps {
   monthLabel: string
   payments: Record<string, MonthPayment>
   dueDates: Record<string, string>
+  entries: DailyExpense[]
   onAmount: (id: string, amount: number) => void
   onName: (id: string, name: string) => void
-  onPriority: (id: string, priority: Priority) => void
   onPayment: (id: string, patch: Partial<MonthPayment>) => void
   onDueDate: (id: string, date: string) => void
   onAdd: () => void
@@ -37,9 +38,9 @@ export function AllocationBoard({
   monthLabel,
   payments,
   dueDates,
+  entries,
   onAmount,
   onName,
-  onPriority,
   onPayment,
   onDueDate,
   onAdd,
@@ -54,7 +55,7 @@ export function AllocationBoard({
         id: line.expense.id,
         name: line.expense.name,
         amount: line.allocated,
-        color: LEVEL_COLOR[line.expense.priority],
+        color: GROUP_COLOR[spendGroup(line.expense.id)],
       })),
     ...(result.sobra > 0
       ? [{ id: 'sobra', name: 'Sobra do mês', amount: result.sobra, color: '#c2882d' }]
@@ -68,8 +69,8 @@ export function AllocationBoard({
           <div>
             <h2 className="font-serif text-2xl">Abatimento automático</h2>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">
-              A receita percorre o nível 1, depois o nível 2 e o nível 3. O nome, o valor e o nível de cada
-              conta podem mudar. O dia coloca o valor no calendário de {monthLabel}.
+              O lançamento do dia entra em alimentação, combustível, contas ou outros. As contas previstas
+              ficam no campo Contas, com o dia deste mês.
             </p>
           </div>
           <div className="flex flex-col items-start gap-2 md:items-end">
@@ -108,10 +109,10 @@ export function AllocationBoard({
                 ))}
           </div>
           <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted">
-            {LEVELS.map((item) => (
-              <li key={item.priority} className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ background: LEVEL_COLOR[item.priority] }} />
-                {item.title}
+            {SPEND_GROUPS.map((group) => (
+              <li key={group.id} className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ background: GROUP_COLOR[group.id] }} />
+                {group.title}
               </li>
             ))}
             <li className="flex items-center gap-2">
@@ -122,24 +123,28 @@ export function AllocationBoard({
         </div>
       </div>
 
-      {LEVELS.map((level) => {
-        const lines = result.lines.filter((line) => line.expense.priority === level.priority)
-        if (lines.length === 0) return null
+      {SPEND_GROUPS.map((group) => {
+        const lines = result.lines.filter((line) => spendGroup(line.expense.id) === group.id)
+        const visible = lines.filter((line) => !line.locked)
+        const dayItems = entries.filter((entry) => entry.date.startsWith(month) && entry.category === group.id)
+        const total = lines.reduce((sum, line) => sum + line.due, 0)
         return (
-          <section key={level.priority} className="overflow-hidden rounded-3xl bg-card ring-1 ring-line">
-            <header className="flex items-start gap-3 border-b border-line px-5 py-4 md:px-6">
-              <span className="mt-1 h-3 w-3 shrink-0 rounded-full" style={{ background: LEVEL_COLOR[level.priority] }} />
-              <div>
-                <h3 className="font-serif text-xl">
-                  {level.title}
-                  <span className="ml-2 text-base font-normal text-muted">{level.name}</span>
-                </h3>
-                <p className="mt-0.5 text-sm text-muted">{level.description}</p>
+          <section key={group.id} className="overflow-hidden rounded-3xl bg-card ring-1 ring-line">
+            <header className="flex items-start justify-between gap-3 border-b border-line px-5 py-4 md:px-6">
+              <div className="flex items-start gap-3">
+                <span className="mt-1 h-3 w-3 shrink-0 rounded-full" style={{ background: GROUP_COLOR[group.id] }} />
+                <div>
+                  <h3 className="font-serif text-xl">{group.title}</h3>
+                  <p className="mt-0.5 text-sm text-muted">{group.description}</p>
+                </div>
               </div>
+              <p className="font-serif text-2xl tabular-nums">{formatBRL(total)}</p>
             </header>
 
+            {visible.length > 0 && (
+              <>
             <ul className="space-y-3 p-3 md:hidden">
-              {lines.map((line) => (
+              {visible.map((line) => (
                 <ExpenseCard
                   key={line.expense.id}
                   line={line}
@@ -149,7 +154,6 @@ export function AllocationBoard({
                   dueDate={dueDates[line.expense.id] ?? ''}
                   onAmount={onAmount}
                   onName={onName}
-                  onPriority={onPriority}
                   onPayment={onPayment}
                   onRemove={onRemove}
                   onDueDate={(date) => onDueDate(line.expense.id, date)}
@@ -158,12 +162,11 @@ export function AllocationBoard({
             </ul>
 
             <div className="hidden overflow-x-auto md:block">
-              <table className="w-full min-w-[920px] border-collapse text-left text-sm">
+              <table className="w-full min-w-[820px] border-collapse text-left text-sm">
                 <thead>
                   <tr className="border-b border-line text-xs tracking-wide text-muted uppercase">
                     <th className="px-4 py-3 font-semibold">Ordem</th>
                     <th className="px-4 py-3 font-semibold">Descrição</th>
-                    <th className="px-4 py-3 font-semibold">Nível</th>
                     <th className="px-4 py-3 font-semibold">Previsto</th>
                     <th className="px-4 py-3 font-semibold">Dia</th>
                     <th className="px-4 py-3 font-semibold">Status</th>
@@ -171,7 +174,7 @@ export function AllocationBoard({
                   </tr>
                 </thead>
                 <tbody>
-                  {lines.map((line, index) => (
+                  {visible.map((line, index) => (
                     <tr
                       key={line.expense.id}
                       className={`border-b border-line last:border-b-0 ${
@@ -185,13 +188,6 @@ export function AllocationBoard({
                       <td className="px-4 py-4 font-semibold tabular-nums">{String(line.order).padStart(2, '0')}</td>
                       <td className="px-4 py-4">
                         <AccountName line={line} fieldId={`expense-name-desktop-${line.expense.id}`} onName={onName} onRemove={onRemove} />
-                      </td>
-                      <td className="px-4 py-4">
-                        {line.locked ? (
-                          <LevelBadge priority={line.expense.priority} />
-                        ) : (
-                          <LevelSelect line={line} onPriority={onPriority} />
-                        )}
                       </td>
                       <td className="px-4 py-4">
                         <AmountCell line={line} fieldId={`expense-desktop-${line.expense.id}`} onAmount={onAmount} />
@@ -223,6 +219,9 @@ export function AllocationBoard({
                 </tbody>
               </table>
             </div>
+              </>
+            )}
+            <DayEntryList entries={dayItems} />
           </section>
         )
       })}
@@ -238,7 +237,6 @@ function ExpenseCard({
   dueDate,
   onAmount,
   onName,
-  onPriority,
   onPayment,
   onDueDate,
   onRemove,
@@ -250,7 +248,6 @@ function ExpenseCard({
   dueDate: string
   onAmount: (id: string, amount: number) => void
   onName: (id: string, name: string) => void
-  onPriority: (id: string, priority: Priority) => void
   onPayment: (id: string, patch: Partial<MonthPayment>) => void
   onDueDate: (date: string) => void
   onRemove: (id: string) => void
@@ -266,11 +263,6 @@ function ExpenseCard({
         </div>
         <StatusBadge line={line} paid={payment?.paid ?? false} />
       </div>
-      {!line.locked && (
-        <div className="mt-3">
-          <LevelSelect line={line} onPriority={onPriority} />
-        </div>
-      )}
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <AmountCell line={line} fieldId={`expense-${line.expense.id}`} onAmount={onAmount} />
         {!line.locked && (
@@ -332,24 +324,26 @@ function AccountName({
   )
 }
 
-function LevelSelect({
-  line,
-  onPriority,
-}: {
-  line: AllocationLine
-  onPriority: (id: string, priority: Priority) => void
-}) {
+function DayEntryList({ entries }: { entries: DailyExpense[] }) {
   return (
-    <select
-      aria-label={`Nível de ${line.expense.name || 'conta'}`}
-      value={line.expense.priority}
-      onChange={(event) => onPriority(line.expense.id, Number(event.target.value) as Priority)}
-      className="rounded-xl bg-white px-2 py-1.5 text-sm ring-1 ring-line outline-none focus:ring-2 focus:ring-teal"
-    >
-      <option value={1}>Nível 1</option>
-      <option value={2}>Nível 2</option>
-      <option value={3}>Nível 3</option>
-    </select>
+    <div className="border-t border-line px-5 py-4 md:px-6">
+      <p className="text-xs font-semibold tracking-wide text-muted uppercase">Lançado no dia</p>
+      {entries.length === 0 ? (
+        <p className="mt-2 text-sm text-muted">Nenhum lançamento neste campo.</p>
+      ) : (
+        <ul className="mt-2 space-y-2">
+          {entries.map((entry) => (
+            <li key={entry.id} className="flex items-center justify-between gap-3 text-sm">
+              <span>
+                <span className="font-semibold">{entry.description}</span>
+                <span className="ml-2 text-muted">{formatDueDate(entry.date)}</span>
+              </span>
+              <span className="font-semibold tabular-nums">{formatBRL(entry.amount)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }
 
@@ -470,17 +464,6 @@ function StatusBadge({ line, paid }: { line: AllocationLine; paid: boolean }) {
   return (
     <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold whitespace-nowrap ${badge.className}`}>
       {badge.label}
-    </span>
-  )
-}
-
-function LevelBadge({ priority }: { priority: Priority }) {
-  return (
-    <span
-      className="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold whitespace-nowrap text-white"
-      style={{ background: LEVEL_COLOR[priority] }}
-    >
-      Nível {priority}
     </span>
   )
 }

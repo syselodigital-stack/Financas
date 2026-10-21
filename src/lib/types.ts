@@ -18,7 +18,7 @@ export interface ExpenseItem {
   custom?: boolean
 }
 
-export type DailyCategory = 'alimentacao' | 'combustivel' | 'outros'
+export type DailyCategory = 'alimentacao' | 'combustivel' | 'contas' | 'outros'
 
 export interface DailyExpense {
   id: string

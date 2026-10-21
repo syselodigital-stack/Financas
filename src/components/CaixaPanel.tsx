@@ -15,7 +15,7 @@ export function CaixaPanel({ caixa, onChange }: CaixaPanelProps) {
       <h2 className="font-serif text-2xl">Contrato habitacional CAIXA</h2>
       <p className="mt-1 text-sm leading-6 text-muted">
         O alerta visual aparece quando o status chega a {MORA_THRESHOLD} parcelas ou mais. Abaixo disso, a
-        casa segue apenas como primeira despesa do nível 1.
+        casa segue como a primeira conta.
       </p>
 
       <div className="mt-5 grid gap-3 sm:grid-cols-3">

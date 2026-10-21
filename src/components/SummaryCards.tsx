@@ -22,8 +22,8 @@ export function SummaryCards({ result, incomes, dates }: SummaryCardsProps) {
         <p className="mt-3 font-serif text-4xl tracking-tight text-ink md:text-5xl">{formatBRL(result.sobra)}</p>
         <p className="mt-3 max-w-md text-sm leading-6 text-muted">
           {result.sobra > 0
-            ? 'Saldo depois de percorrer o nível 1, o nível 2 e o nível 3. Este valor alimenta o fundo de reserva.'
-            : 'A receita foi toda consumida na ordem de prioridade. O fundo não recebe aporte neste mês.'}
+            ? 'Saldo depois de cobrir as contas e os lançamentos do dia. Este valor alimenta o fundo de reserva.'
+            : 'A receita foi toda consumida. O fundo não recebe aporte neste mês.'}
         </p>
       </article>
 

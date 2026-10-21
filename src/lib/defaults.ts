@@ -1,26 +1,37 @@
 import type { AppState, DailyCategory, DailyExpense, ExpenseDue, ExpenseItem, ExpenseSettlement, IncomeReceipt, IncomeSource } from './types'
 import { clampMoney, currentMonthKey, isDateInMonth } from './money'
 
-export const LEVELS = [
+export const SPEND_GROUPS = [
   {
-    priority: 1 as const,
-    title: 'Nível 1',
-    name: 'Mínimo existencial / teto',
-    description: 'Habitação, comida, deslocamento e contas da casa.',
+    id: 'alimentacao' as const,
+    title: 'Alimentação',
+    description: 'O que for lançado no dia como alimentação entra neste campo.',
   },
   {
-    priority: 2 as const,
-    title: 'Nível 2',
-    name: 'Saúde, educação e serviços',
-    description: 'Conectividade, proteção, dentistas e curso.',
+    id: 'combustivel' as const,
+    title: 'Combustível',
+    description: 'O que for lançado no dia como combustível entra neste campo.',
   },
   {
-    priority: 3 as const,
-    title: 'Nível 3',
-    name: 'Carnês e impostos',
-    description: 'Parcelamentos e tributos depois do essencial.',
+    id: 'contas' as const,
+    title: 'Contas',
+    description: 'Contas previstas e o que for lançado no dia como conta.',
+  },
+  {
+    id: 'outros' as const,
+    title: 'Outros',
+    description: 'O que for lançado no dia como outros entra neste campo.',
   },
 ]
+
+export type SpendGroup = (typeof SPEND_GROUPS)[number]['id']
+
+export function spendGroup(expenseId: string): SpendGroup {
+  if (expenseId === 'alimentacao' || expenseId === 'diarias-alimentacao') return 'alimentacao'
+  if (expenseId === 'combustivel' || expenseId === 'diarias-combustivel') return 'combustivel'
+  if (expenseId === 'diarias-outros') return 'outros'
+  return 'contas'
+}
 
 export const DEFAULT_INCOMES: IncomeSource[] = [
   { id: 'renda-1', label: 'Renda líquida 1', holder: 'Esposa', amount: 5100 },
@@ -280,7 +291,7 @@ function sanitizeExtraIncomes(rows: unknown[]): IncomeSource[] {
   return extras
 }
 
-const DAILY_CATEGORIES = new Set<DailyCategory>(['alimentacao', 'combustivel', 'outros'])
+const DAILY_CATEGORIES = new Set<DailyCategory>(['alimentacao', 'combustivel', 'contas', 'outros'])
 
 function sanitizeDaily(value: unknown): DailyExpense | null {
   const row = asRecord(value)

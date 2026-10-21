@@ -6,6 +6,7 @@ import type { DailyCategory, DailyExpense } from '../lib/types'
 const CATEGORIES: { id: DailyCategory; label: string }[] = [
   { id: 'alimentacao', label: 'Alimentação' },
   { id: 'combustivel', label: 'Combustível' },
+  { id: 'contas', label: 'Contas' },
   { id: 'outros', label: 'Outros' },
 ]
 
@@ -43,6 +44,7 @@ export function DailyLedger({ month, entries, incomes, bills, unplaced, onAdd, o
   const byCategory = {
     alimentacao: sum(monthEntries.filter((entry) => entry.category === 'alimentacao')),
     combustivel: sum(monthEntries.filter((entry) => entry.category === 'combustivel')),
+    contas: sum(monthEntries.filter((entry) => entry.category === 'contas')),
     outros: sum(monthEntries.filter((entry) => entry.category === 'outros')),
   }
   const filledDays = new Set(monthEntries.map((entry) => entry.date)).size
@@ -71,7 +73,7 @@ export function DailyLedger({ month, entries, incomes, bills, unplaced, onAdd, o
         <div>
           <h2 className="font-serif text-2xl">Calendário do mês</h2>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">
-            Cada dia mostra a entrada, a conta que vence e o gasto lançado. O saldo desce conforme o mês anda.
+            Cada dia mostra a entrada, a conta e o gasto lançado. O lançamento entra em alimentação, combustível, contas ou outros.
           </p>
         </div>
         <p className="text-right">
@@ -83,6 +85,7 @@ export function DailyLedger({ month, entries, incomes, bills, unplaced, onAdd, o
       <ul className="mt-4 flex flex-wrap gap-2 text-sm">
         <li className="rounded-full bg-foam px-3 py-1">Alimentação {formatBRL(byCategory.alimentacao)}</li>
         <li className="rounded-full bg-foam px-3 py-1">Combustível {formatBRL(byCategory.combustivel)}</li>
+        <li className="rounded-full bg-foam px-3 py-1">Contas {formatBRL(byCategory.contas)}</li>
         <li className="rounded-full bg-foam px-3 py-1">Outros {formatBRL(byCategory.outros)}</li>
         <li className="rounded-full bg-[#efe6d6] px-3 py-1">
           {filledDays} de {dates.length} dias com lançamento
@@ -185,7 +188,7 @@ export function DailyLedger({ month, entries, incomes, bills, unplaced, onAdd, o
               <input
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
-                placeholder="Mercado, padaria, farmácia..."
+                placeholder="Mercado, gasolina, luz, farmácia..."
                 className="w-full rounded-2xl bg-white px-3 py-2.5 ring-1 ring-line outline-none focus:ring-2 focus:ring-teal"
               />
             </label>
