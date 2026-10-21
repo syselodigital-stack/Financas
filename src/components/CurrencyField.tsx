@@ -6,7 +6,7 @@ interface CurrencyFieldProps {
   label: string
   value: number
   onChange: (value: number) => void
-  labelVisibility?: 'always' | 'mobile'
+  labelVisibility?: 'always' | 'mobile' | 'hidden'
 }
 
 export function CurrencyField({ id, label, value, onChange, labelVisibility = 'always' }: CurrencyFieldProps) {
@@ -25,7 +25,7 @@ export function CurrencyField({ id, label, value, onChange, labelVisibility = 'a
     <label className="block" htmlFor={id}>
       <span
         className={`text-xs font-semibold tracking-wide text-muted uppercase ${
-          labelVisibility === 'mobile' ? 'mb-1 block md:sr-only' : 'mb-1 block'
+          labelVisibility === 'hidden' ? 'sr-only' : labelVisibility === 'mobile' ? 'mb-1 block md:sr-only' : 'mb-1 block'
         }`}
       >
         {label}

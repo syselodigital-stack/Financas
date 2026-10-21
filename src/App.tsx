@@ -223,7 +223,7 @@ export default function App() {
           )}
 
           {tab === 'caixa' && (
-            <div className="mx-auto max-w-3xl">
+            <div>
               <IncomePanel
                 incomes={state.incomes}
                 total={result.totalIncome}
