@@ -9,14 +9,24 @@ const CATEGORIES: { id: DailyCategory; label: string }[] = [
   { id: 'outros', label: 'Outros' },
 ]
 
+interface CalendarItem {
+  id: string
+  name: string
+  amount: number
+  date: string
+}
+
 interface DailyLedgerProps {
   month: string
   entries: DailyExpense[]
+  incomes: CalendarItem[]
+  bills: CalendarItem[]
+  unplaced: string[]
   onAdd: (entry: Omit<DailyExpense, 'id'>) => void
   onRemove: (id: string) => void
 }
 
-export function DailyLedger({ month, entries, onAdd, onRemove }: DailyLedgerProps) {
+export function DailyLedger({ month, entries, incomes, bills, unplaced, onAdd, onRemove }: DailyLedgerProps) {
   const dates = useMemo(() => monthDates(month), [month])
   const [selected, setSelected] = useState(() => preferredDay(month))
   const [description, setDescription] = useState('')
@@ -38,6 +48,9 @@ export function DailyLedger({ month, entries, onAdd, onRemove }: DailyLedgerProp
   const filledDays = new Set(monthEntries.map((entry) => entry.date)).size
   const leading = mondayIndex(dates[0] ?? `${month}-01`)
   const selectedIndex = dates.indexOf(selected)
+  const days = useMemo(() => projectMonth(dates, incomes, bills, monthEntries), [dates, incomes, bills, monthEntries])
+  const selectedDay = days.find((day) => day.date === selected) ?? days[0]
+  const closing = days[days.length - 1]?.balance ?? 0
 
   function addEntry() {
     const text = description.trim()
@@ -56,15 +69,14 @@ export function DailyLedger({ month, entries, onAdd, onRemove }: DailyLedgerProp
     <section id="diario" className="rounded-3xl bg-card p-5 ring-1 ring-line md:p-6">
       <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
         <div>
-          <h2 className="font-serif text-2xl">Despesas diárias</h2>
+          <h2 className="font-serif text-2xl">Calendário do mês</h2>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">
-            Cada dia do mês aceita quantos lançamentos forem precisos. Alimentação e combustível somam nesses
-            itens. O que for marcado como outros entra no nível 1, depois da água.
+            Cada dia mostra a entrada, a conta que vence e o gasto lançado. O saldo desce conforme o mês anda.
           </p>
         </div>
         <p className="text-right">
-          <span className="block text-xs font-bold tracking-wide text-muted uppercase">Total do mês</span>
-          <span className="font-serif text-3xl">{formatBRL(total)}</span>
+          <span className="block text-xs font-bold tracking-wide text-muted uppercase">Saldo no fim do mês</span>
+          <span className={`font-serif text-3xl ${closing < 0 ? 'text-alert' : ''}`}>{formatSigned(closing)}</span>
         </p>
       </div>
 
@@ -75,7 +87,11 @@ export function DailyLedger({ month, entries, onAdd, onRemove }: DailyLedgerProp
         <li className="rounded-full bg-[#efe6d6] px-3 py-1">
           {filledDays} de {dates.length} dias com lançamento
         </li>
+        <li className="rounded-full bg-paper px-3 py-1">Gastos do dia {formatBRL(total)}</li>
       </ul>
+      {unplaced.length > 0 && (
+        <p className="mt-3 text-sm text-muted">Ainda sem dia no calendário: {unplaced.join(', ')}.</p>
+      )}
 
       <div className="mt-5 grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
         <div>
@@ -89,29 +105,45 @@ export function DailyLedger({ month, entries, onAdd, onRemove }: DailyLedgerProp
               <span key={`blank-${index}`} />
             ))}
             {dates.map((date) => {
-              const dayTotal = sum(monthEntries.filter((entry) => entry.date === date))
+              const day = days.find((item) => item.date === date)
               const active = date === selected
+              const marks = [
+                day && day.incomes.length > 0 ? 'entrada' : '',
+                day && day.bills.length > 0 ? 'conta' : '',
+                day && day.dailyTotal > 0 ? 'gasto' : '',
+              ].filter(Boolean)
               return (
                 <button
                   key={date}
                   type="button"
                   aria-pressed={active}
-                  aria-label={`${dayHeading(date)}${dayTotal > 0 ? `, ${formatBRL(dayTotal)}` : ''}`}
+                  aria-label={`${dayHeading(date)}${marks.length > 0 ? `, ${marks.join(', ')}` : ''}`}
                   onClick={() => setSelected(date)}
-                  className={`min-h-14 rounded-2xl px-1 py-1.5 text-left ${
-                    active ? 'bg-teal text-white' : dayTotal > 0 ? 'bg-foam text-ink' : 'bg-paper text-ink'
+                  className={`min-h-16 rounded-2xl px-1 py-1.5 text-left ${
+                    active ? 'bg-teal text-white' : 'bg-paper text-ink'
                   }`}
                 >
                   <span className="block text-xs font-semibold">{Number(date.slice(-2))}</span>
-                  {dayTotal > 0 && (
-                    <span className={`block text-[10px] leading-tight tabular-nums ${active ? 'text-white' : 'text-teal'}`}>
-                      {formatBRL(dayTotal).replace(/^R\$\s*/u, '')}
-                    </span>
-                  )}
+                  <span className="mt-1 flex gap-1" aria-hidden="true">
+                    {day && day.incomes.length > 0 && (
+                      <span className={`h-1.5 w-1.5 rounded-full ${active ? 'bg-[#e8c27a]' : 'bg-gold'}`} />
+                    )}
+                    {day && day.bills.length > 0 && (
+                      <span className={`h-1.5 w-1.5 rounded-full ${active ? 'bg-white' : 'bg-alert'}`} />
+                    )}
+                    {day && day.dailyTotal > 0 && (
+                      <span className={`h-1.5 w-1.5 rounded-full ${active ? 'bg-foam' : 'bg-teal'}`} />
+                    )}
+                  </span>
                 </button>
               )
             })}
           </div>
+          <ul className="mt-3 flex flex-wrap gap-3 text-xs text-muted">
+            <li className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-gold" /> Entrada</li>
+            <li className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-alert" /> Conta</li>
+            <li className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-teal" /> Gasto do dia</li>
+          </ul>
         </div>
 
         <div className="rounded-3xl bg-paper/80 p-4">
@@ -134,6 +166,12 @@ export function DailyLedger({ month, entries, onAdd, onRemove }: DailyLedgerProp
             </button>
           </div>
           <h3 className="mt-3 font-serif text-2xl">{dayHeading(selected)}</h3>
+          <p className={`mt-1 text-sm font-semibold ${selectedDay && selectedDay.balance < 0 ? 'text-alert' : 'text-ink'}`}>
+            Saldo até este dia: {formatSigned(selectedDay?.balance ?? 0)}
+          </p>
+
+          <DayList title="Entradas" items={selectedDay?.incomes ?? []} empty="Nenhuma entrada neste dia." />
+          <DayList title="Contas" items={selectedDay?.bills ?? []} empty="Nenhuma conta neste dia." />
 
           <form
             className="mt-4 space-y-3"
@@ -214,6 +252,58 @@ function preferredDay(month: string): string {
   return `${month}-01`
 }
 
+function formatSigned(value: number): string {
+  const amount = Number.isFinite(value) ? value : 0
+  return amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
+
 function sum(entries: DailyExpense[]): number {
   return entries.reduce((total, entry) => total + entry.amount, 0)
+}
+
+interface DaySnapshot {
+  date: string
+  incomes: CalendarItem[]
+  bills: CalendarItem[]
+  dailyTotal: number
+  balance: number
+}
+
+function projectMonth(
+  dates: string[],
+  incomes: CalendarItem[],
+  bills: CalendarItem[],
+  entries: DailyExpense[],
+): DaySnapshot[] {
+  let balance = 0
+  return dates.map((date) => {
+    const dayIncomes = incomes.filter((item) => item.date === date && item.amount > 0)
+    const dayBills = bills.filter((item) => item.date === date && item.amount > 0)
+    const dailyTotal = sum(entries.filter((entry) => entry.date === date))
+    balance +=
+      dayIncomes.reduce((total, item) => total + item.amount, 0) -
+      dayBills.reduce((total, item) => total + item.amount, 0) -
+      dailyTotal
+    return { date, incomes: dayIncomes, bills: dayBills, dailyTotal, balance }
+  })
+}
+
+function DayList({ title, items, empty }: { title: string; items: CalendarItem[]; empty: string }) {
+  return (
+    <div className="mt-4">
+      <p className="text-xs font-semibold tracking-wide text-muted uppercase">{title}</p>
+      {items.length === 0 ? (
+        <p className="mt-1 text-sm text-muted">{empty}</p>
+      ) : (
+        <ul className="mt-1 space-y-1">
+          {items.map((item) => (
+            <li key={item.id} className="flex items-center justify-between gap-3 text-sm">
+              <span>{item.name}</span>
+              <span className="font-semibold tabular-nums">{formatBRL(item.amount)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
 }

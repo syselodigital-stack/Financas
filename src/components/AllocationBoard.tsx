@@ -1,6 +1,6 @@
 import { CurrencyField } from './CurrencyField'
 import { LEVELS } from '../lib/defaults'
-import { formatBRL } from '../lib/money'
+import { daysInMonth, formatBRL } from '../lib/money'
 import type { AllocationLine, AllocationResult, Priority } from '../lib/types'
 
 const LEVEL_COLOR: Record<Priority, string> = {
@@ -17,13 +17,26 @@ interface MonthPayment {
 interface AllocationBoardProps {
   result: AllocationResult
   delinquent: boolean
+  month: string
   monthLabel: string
   payments: Record<string, MonthPayment>
+  dueDates: Record<string, string>
   onAmount: (id: string, amount: number) => void
   onPayment: (id: string, patch: Partial<MonthPayment>) => void
+  onDueDate: (id: string, date: string) => void
 }
 
-export function AllocationBoard({ result, delinquent, monthLabel, payments, onAmount, onPayment }: AllocationBoardProps) {
+export function AllocationBoard({
+  result,
+  delinquent,
+  month,
+  monthLabel,
+  payments,
+  dueDates,
+  onAmount,
+  onPayment,
+  onDueDate,
+}: AllocationBoardProps) {
   const payable = result.lines.filter((line) => canSettle(line))
   const paidCount = payable.filter((line) => payments[line.expense.id]?.paid).length
   const segments = [
@@ -47,8 +60,8 @@ export function AllocationBoard({ result, delinquent, monthLabel, payments, onAm
           <div>
             <h2 className="font-serif text-2xl">Abatimento automático</h2>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">
-              A receita percorre o nível 1, depois o nível 2 e o nível 3. Os valores fixos aparecem em texto.
-              Alimentação, combustível, dentistas e IPTU continuam editáveis.
+              A receita percorre o nível 1, depois o nível 2 e o nível 3. O dia de cada conta coloca esse
+              valor no calendário de {monthLabel}.
             </p>
           </div>
           <p className="text-sm font-semibold text-ink">
@@ -113,22 +126,26 @@ export function AllocationBoard({ result, delinquent, monthLabel, payments, onAm
                 <ExpenseCard
                   key={line.expense.id}
                   line={line}
+                  month={month}
                   emphasized={delinquent && line.expense.id === 'caixa'}
                   payment={payments[line.expense.id]}
+                  dueDate={dueDates[line.expense.id] ?? ''}
                   onAmount={onAmount}
                   onPayment={onPayment}
+                  onDueDate={(date) => onDueDate(line.expense.id, date)}
                 />
               ))}
             </ul>
 
             <div className="hidden overflow-x-auto md:block">
-              <table className="w-full min-w-[760px] border-collapse text-left text-sm">
+              <table className="w-full min-w-[920px] border-collapse text-left text-sm">
                 <thead>
                   <tr className="border-b border-line text-xs tracking-wide text-muted uppercase">
                     <th className="px-4 py-3 font-semibold">Ordem</th>
                     <th className="px-4 py-3 font-semibold">Descrição</th>
                     <th className="px-4 py-3 font-semibold">Nível</th>
                     <th className="px-4 py-3 font-semibold">Previsto</th>
+                    <th className="px-4 py-3 font-semibold">Dia</th>
                     <th className="px-4 py-3 font-semibold">Status</th>
                     <th className="px-4 py-3 font-semibold">Ação</th>
                   </tr>
@@ -157,6 +174,18 @@ export function AllocationBoard({ result, delinquent, monthLabel, payments, onAm
                         <AmountCell line={line} fieldId={`expense-desktop-${line.expense.id}`} onAmount={onAmount} />
                       </td>
                       <td className="px-4 py-4">
+                        {line.locked ? (
+                          <span className="text-muted">—</span>
+                        ) : (
+                          <DueDayField
+                            month={month}
+                            name={line.expense.name}
+                            value={dueDates[line.expense.id] ?? ''}
+                            onChange={(date) => onDueDate(line.expense.id, date)}
+                          />
+                        )}
+                      </td>
+                      <td className="px-4 py-4">
                         <StatusBadge line={line} paid={payments[line.expense.id]?.paid ?? false} />
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap">
@@ -180,16 +209,22 @@ export function AllocationBoard({ result, delinquent, monthLabel, payments, onAm
 
 function ExpenseCard({
   line,
+  month,
   emphasized,
   payment,
+  dueDate,
   onAmount,
   onPayment,
+  onDueDate,
 }: {
   line: AllocationLine
+  month: string
   emphasized: boolean
   payment?: MonthPayment
+  dueDate: string
   onAmount: (id: string, amount: number) => void
   onPayment: (id: string, patch: Partial<MonthPayment>) => void
+  onDueDate: (date: string) => void
 }) {
   return (
     <li className={`rounded-2xl border border-line p-4 ${emphasized ? 'bg-alert-soft' : 'bg-paper/40'}`}>
@@ -203,8 +238,14 @@ function ExpenseCard({
         </div>
         <StatusBadge line={line} paid={payment?.paid ?? false} />
       </div>
-      <div className="mt-3">
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <AmountCell line={line} fieldId={`expense-${line.expense.id}`} onAmount={onAmount} />
+        {!line.locked && (
+          <label className="block">
+            <span className="mb-1 block text-xs font-semibold tracking-wide text-muted uppercase">Dia</span>
+            <DueDayField month={month} name={line.expense.name} value={dueDate} onChange={onDueDate} />
+          </label>
+        )}
       </div>
       {canSettle(line) && (
         <div className="mt-3 border-t border-line pt-3">
@@ -212,6 +253,31 @@ function ExpenseCard({
         </div>
       )}
     </li>
+  )
+}
+
+function DueDayField({
+  month,
+  name,
+  value,
+  onChange,
+}: {
+  month: string
+  name: string
+  value: string
+  onChange: (date: string) => void
+}) {
+  const lastDay = String(daysInMonth(month)).padStart(2, '0')
+  return (
+    <input
+      type="date"
+      aria-label={`Dia de ${name}`}
+      min={`${month}-01`}
+      max={`${month}-${lastDay}`}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      className="w-full max-w-[11rem] rounded-xl bg-white px-2 py-1.5 text-sm ring-1 ring-line outline-none focus:ring-2 focus:ring-teal"
+    />
   )
 }
 

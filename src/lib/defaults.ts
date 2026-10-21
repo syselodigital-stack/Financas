@@ -1,4 +1,4 @@
-import type { AppState, DailyCategory, DailyExpense, ExpenseItem, ExpenseSettlement, IncomeReceipt, IncomeSource } from './types'
+import type { AppState, DailyCategory, DailyExpense, ExpenseDue, ExpenseItem, ExpenseSettlement, IncomeReceipt, IncomeSource } from './types'
 import { clampMoney, currentMonthKey, isDateInMonth } from './money'
 
 export const LEVELS = [
@@ -65,6 +65,7 @@ export function defaultState(date = new Date()): AppState {
     dailyExpenses: [],
     settlements: [],
     receipts: [],
+    expenseDues: [],
   }
 }
 
@@ -84,6 +85,7 @@ export function sanitizeState(input: unknown): AppState {
   const dailyRows = Array.isArray(raw.dailyExpenses) ? raw.dailyExpenses : []
   const settlementRows = Array.isArray(raw.settlements) ? raw.settlements : []
   const receiptRows = Array.isArray(raw.receipts) ? raw.receipts : []
+  const dueRows = Array.isArray(raw.expenseDues) ? raw.expenseDues : []
   const caixa = asRecord(raw.caixa)
   const expenseIds = new Set(base.expenses.map((expense) => expense.id))
   const incomes = [
@@ -145,6 +147,7 @@ export function sanitizeState(input: unknown): AppState {
       receiptRows,
       new Set(incomes.map((income) => income.id)),
     ),
+    expenseDues: sanitizeExpenseDues(dueRows, expenseIds),
   }
 }
 
@@ -156,6 +159,19 @@ function sanitizeReceipts(rows: unknown[], incomeIds: Set<string>): IncomeReceip
     if (!row || typeof row.month !== 'string' || typeof row.incomeId !== 'string' || typeof row.date !== 'string') continue
     if (!incomeIds.has(row.incomeId) || !isDateInMonth(row.date, row.month)) continue
     byKey.set(`${row.month}:${row.incomeId}`, { month: row.month, incomeId: row.incomeId, date: row.date })
+  }
+
+  return [...byKey.values()].sort((a, b) => a.month.localeCompare(b.month) || a.date.localeCompare(b.date))
+}
+
+function sanitizeExpenseDues(rows: unknown[], expenseIds: Set<string>): ExpenseDue[] {
+  const byKey = new Map<string, ExpenseDue>()
+
+  for (const value of rows) {
+    const row = asRecord(value)
+    if (!row || typeof row.month !== 'string' || typeof row.expenseId !== 'string' || typeof row.date !== 'string') continue
+    if (!expenseIds.has(row.expenseId) || !isDateInMonth(row.date, row.month)) continue
+    byKey.set(`${row.month}:${row.expenseId}`, { month: row.month, expenseId: row.expenseId, date: row.date })
   }
 
   return [...byKey.values()].sort((a, b) => a.month.localeCompare(b.month) || a.date.localeCompare(b.date))

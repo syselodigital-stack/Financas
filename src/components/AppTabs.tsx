@@ -1,10 +1,9 @@
-export type TabId = 'painel' | 'caixa' | 'diario' | 'mapa' | 'fundo' | 'ajustes'
+export type TabId = 'painel' | 'caixa' | 'diario' | 'fundo' | 'ajustes'
 
 export const TABS: { id: TabId; label: string; short: string }[] = [
   { id: 'painel', label: 'Painel', short: 'Painel' },
   { id: 'caixa', label: 'Caixa', short: 'Caixa' },
   { id: 'diario', label: 'Diário', short: 'Diário' },
-  { id: 'mapa', label: 'Abatimento', short: 'Mapa' },
   { id: 'fundo', label: 'Fundo', short: 'Fundo' },
   { id: 'ajustes', label: 'Ajustes', short: 'Ajustes' },
 ]
@@ -12,10 +11,10 @@ export const TABS: { id: TabId; label: string; short: string }[] = [
 const TAB_KEY = 'rff-tab'
 
 export function readTab(): TabId {
-  if (window.location.hash === '#diario') return 'diario'
-  if (window.location.hash === '#abatimento') return 'mapa'
+  if (window.location.hash === '#diario' || window.location.hash === '#abatimento') return 'diario'
   try {
     const saved = sessionStorage.getItem(TAB_KEY)
+    if (saved === 'mapa') return 'diario'
     if (saved && TABS.some((tab) => tab.id === saved)) return saved as TabId
   } catch {
     /* a sessão do navegador pode estar bloqueada */
@@ -44,7 +43,7 @@ export function AppTabs({ tab, onChange, badges }: AppTabsProps) {
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       aria-label="Seções"
     >
-      <div className="mx-auto grid max-w-6xl grid-cols-6 md:flex md:px-6" role="tablist">
+      <div className="mx-auto grid max-w-6xl grid-cols-5 md:flex md:px-6" role="tablist">
         {TABS.map((item) => {
           const selected = tab === item.id
           return (

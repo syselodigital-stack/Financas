@@ -54,6 +54,12 @@ export interface IncomeReceipt {
   date: string
 }
 
+export interface ExpenseDue {
+  month: string
+  expenseId: string
+  date: string
+}
+
 export interface AppState {
   incomes: IncomeSource[]
   expenses: ExpenseItem[]
@@ -64,6 +70,7 @@ export interface AppState {
   closings: MonthClosing[]
   settlements: ExpenseSettlement[]
   receipts: IncomeReceipt[]
+  expenseDues: ExpenseDue[]
 }
 
 export type CoverageStatus = 'pending' | 'covered' | 'partial' | 'uncovered'

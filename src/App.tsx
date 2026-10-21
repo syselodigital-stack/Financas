@@ -60,6 +60,35 @@ export default function App() {
       .filter((item) => item.month === state.activeMonth)
       .map((item) => [item.incomeId, item.date]),
   )
+  const billDates = Object.fromEntries(
+    (state.expenseDues ?? [])
+      .filter((item) => item.month === state.activeMonth)
+      .map((item) => [item.expenseId, item.date]),
+  )
+  const calendarIncomes = state.incomes
+    .filter((income) => monthDates[income.id])
+    .map((income) => ({
+      id: income.id,
+      name: income.holder || income.label,
+      amount: income.amount,
+      date: monthDates[income.id],
+    }))
+  const calendarBills = result.lines
+    .filter((line) => !line.locked && billDates[line.expense.id])
+    .map((line) => ({
+      id: line.expense.id,
+      name: line.expense.name,
+      amount: line.expense.amount,
+      date: billDates[line.expense.id],
+    }))
+  const unplaced = [
+    ...state.incomes
+      .filter((income) => income.amount > 0 && !monthDates[income.id])
+      .map((income) => income.holder || income.label),
+    ...result.lines
+      .filter((line) => !line.locked && line.expense.amount > 0 && !billDates[line.expense.id])
+      .map((line) => line.expense.name),
+  ]
 
   function openTab(next: TabId) {
     setTab(next)
@@ -170,11 +199,11 @@ export default function App() {
         </div>
       </header>
 
-      {delinquent && <MoraAlert caixa={state.caixa} onOpen={() => openTab('mapa')} />}
+      {delinquent && <MoraAlert caixa={state.caixa} onOpen={() => openTab('diario')} />}
       <AppTabs
         tab={tab}
         onChange={openTab}
-        badges={{ caixa: delinquent, mapa: result.sombra > 0 }}
+        badges={{ caixa: delinquent, diario: result.sombra > 0 }}
       />
 
       <main id="conteudo" className="mx-auto max-w-6xl px-4 py-4 pb-24 md:px-6 md:py-6 md:pb-10">
@@ -261,57 +290,74 @@ export default function App() {
           )}
 
           {tab === 'diario' && (
-            <DailyLedger
-              month={state.activeMonth}
-              entries={state.dailyExpenses}
-              onAdd={(entry) =>
-                setState((current) => ({
-                  ...current,
-                  dailyExpenses: [...current.dailyExpenses, { ...entry, id: crypto.randomUUID() }],
-                }))
-              }
-              onRemove={(id) =>
-                setState((current) => ({
-                  ...current,
-                  dailyExpenses: current.dailyExpenses.filter((item) => item.id !== id),
-                }))
-              }
-            />
-          )}
-
-          {tab === 'mapa' && (
-            <AllocationBoard
-              result={result}
-              delinquent={delinquent}
-              monthLabel={monthLabel(state.activeMonth)}
-              payments={monthPayments}
-              onAmount={(id, amount) =>
-                setState((current) => ({
-                  ...current,
-                  expenses: current.expenses.map((expense) => (expense.id === id ? { ...expense, amount } : expense)),
-                }))
-              }
-              onPayment={(id, patch) =>
-                setState((current) => {
-                  const existing = current.settlements.find(
-                    (item) => item.month === current.activeMonth && item.expenseId === id,
-                  )
-                  const next = {
-                    month: current.activeMonth,
-                    expenseId: id,
-                    paid: patch.paid ?? existing?.paid ?? false,
-                    installments: patch.installments ?? existing?.installments ?? 0,
-                  }
-                  const rest = current.settlements.filter(
-                    (item) => item.month !== current.activeMonth || item.expenseId !== id,
-                  )
-                  return {
+            <div className="space-y-4">
+              <DailyLedger
+                month={state.activeMonth}
+                entries={state.dailyExpenses}
+                incomes={calendarIncomes}
+                bills={calendarBills}
+                unplaced={unplaced}
+                onAdd={(entry) =>
+                  setState((current) => ({
                     ...current,
-                    settlements: !next.paid && next.installments <= 0 ? rest : [...rest, next],
-                  }
-                })
-              }
-            />
+                    dailyExpenses: [...current.dailyExpenses, { ...entry, id: crypto.randomUUID() }],
+                  }))
+                }
+                onRemove={(id) =>
+                  setState((current) => ({
+                    ...current,
+                    dailyExpenses: current.dailyExpenses.filter((item) => item.id !== id),
+                  }))
+                }
+              />
+              <AllocationBoard
+                result={result}
+                delinquent={delinquent}
+                month={state.activeMonth}
+                monthLabel={monthLabel(state.activeMonth)}
+                payments={monthPayments}
+                dueDates={billDates}
+                onAmount={(id, amount) =>
+                  setState((current) => ({
+                    ...current,
+                    expenses: current.expenses.map((expense) => (expense.id === id ? { ...expense, amount } : expense)),
+                  }))
+                }
+                onPayment={(id, patch) =>
+                  setState((current) => {
+                    const existing = current.settlements.find(
+                      (item) => item.month === current.activeMonth && item.expenseId === id,
+                    )
+                    const next = {
+                      month: current.activeMonth,
+                      expenseId: id,
+                      paid: patch.paid ?? existing?.paid ?? false,
+                      installments: patch.installments ?? existing?.installments ?? 0,
+                    }
+                    const rest = current.settlements.filter(
+                      (item) => item.month !== current.activeMonth || item.expenseId !== id,
+                    )
+                    return {
+                      ...current,
+                      settlements: !next.paid && next.installments <= 0 ? rest : [...rest, next],
+                    }
+                  })
+                }
+                onDueDate={(id, date) =>
+                  setState((current) => {
+                    const dues = current.expenseDues ?? []
+                    const rest = dues.filter((item) => item.month !== current.activeMonth || item.expenseId !== id)
+                    if (!date || !isDateInMonth(date, current.activeMonth)) {
+                      return { ...current, expenseDues: rest }
+                    }
+                    return {
+                      ...current,
+                      expenseDues: [...rest, { month: current.activeMonth, expenseId: id, date }],
+                    }
+                  })
+                }
+              />
+            </div>
           )}
 
           {tab === 'fundo' && (
