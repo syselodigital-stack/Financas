@@ -30,6 +30,7 @@ export default function App() {
   const applyingRemote = useRef(false)
   const localDirty = useRef(false)
   const pushGen = useRef(0)
+  const seenCustom = useRef(false)
   const [notice, setNotice] = useState('')
   const [tab, setTab] = useState<TabId>(() => readTab())
 
@@ -110,9 +111,11 @@ export default function App() {
       .then(async (remote) => {
         if (cancel) return
         if (remote && !isPristineState(remote)) {
+          seenCustom.current = true
           applyingRemote.current = true
           setState(remote)
         } else if (!isPristineState(local)) {
+          seenCustom.current = true
           await pushRemoteState(client, local)
         } else if (remote) {
           applyingRemote.current = true
@@ -143,10 +146,11 @@ export default function App() {
       return
     }
     const current = loadSupabaseConfig()
-    if (!current || isPristineState(state)) {
+    if (!current || (isPristineState(state) && !seenCustom.current)) {
       localDirty.current = false
       return
     }
+    if (!isPristineState(state)) seenCustom.current = true
 
     const client = createHouseholdClient(current)
     const generation = ++pushGen.current
