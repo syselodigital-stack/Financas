@@ -112,6 +112,32 @@ export function sameState(left: AppState, right: AppState): boolean {
   return JSON.stringify(left) === JSON.stringify(right)
 }
 
+export function keepDrafts(local: AppState, remote: AppState): AppState {
+  const incomeIds = new Set(remote.incomes.map((income) => income.id))
+  const expenseIds = new Set(remote.expenses.map((expense) => expense.id))
+  const incomeDrafts = local.incomes.filter(
+    (income) => income.custom && !incomeIds.has(income.id) && !income.holder.trim() && income.amount <= 0,
+  )
+  const expenseDrafts = local.expenses.filter(
+    (expense) => expense.custom && !expenseIds.has(expense.id) && !expense.name.trim() && expense.amount <= 0,
+  )
+  if (incomeDrafts.length === 0 && expenseDrafts.length === 0) return remote
+
+  const draftIds = new Set(incomeDrafts.map((income) => income.id))
+  const receiptDrafts = local.receipts.filter(
+    (receipt) =>
+      draftIds.has(receipt.incomeId) &&
+      !remote.receipts.some((item) => item.month === receipt.month && item.incomeId === receipt.incomeId),
+  )
+
+  return {
+    ...remote,
+    incomes: [...remote.incomes, ...incomeDrafts],
+    expenses: [...remote.expenses, ...expenseDrafts],
+    receipts: [...remote.receipts, ...receiptDrafts],
+  }
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   return value as Record<string, unknown>

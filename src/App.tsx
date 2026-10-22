@@ -6,7 +6,7 @@ import { IncomePanel } from './components/IncomePanel'
 import { PanelHome } from './components/PanelHome'
 import { ProjectionPanel } from './components/ProjectionPanel'
 import { SyncPanel } from './components/SyncPanel'
-import { defaultState, isPristineState, sameState } from './lib/defaults'
+import { defaultState, isPristineState, keepDrafts, sameState } from './lib/defaults'
 import { allocate, projectYear, upsertClosing } from './lib/engine'
 import { daysInMonth, formatBRL, isDateInMonth, monthLabel, monthsOfYear, yearOf } from './lib/money'
 import {
@@ -179,9 +179,10 @@ export default function App() {
         .then((remote) => {
           if (cancel || !remote) return
           setState((currentState) => {
-            if (sameState(currentState, remote)) return currentState
+            const next = keepDrafts(currentState, remote)
+            if (sameState(currentState, next)) return currentState
             applyingRemote.current = true
-            return remote
+            return next
           })
         })
         .catch(() => {
