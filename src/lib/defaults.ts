@@ -81,6 +81,37 @@ export function defaultState(date = new Date()): AppState {
   }
 }
 
+export function isPristineState(state: AppState): boolean {
+  if (
+    state.dailyExpenses.length > 0 ||
+    state.closings.length > 0 ||
+    state.settlements.length > 0 ||
+    state.receipts.length > 0 ||
+    state.expenseDues.length > 0 ||
+    state.removedExpenseIds.length > 0 ||
+    state.reserveOpening !== 0
+  ) {
+    return false
+  }
+  if (state.caixa.overdueInstallments !== 0 || state.caixa.oldestDueDate !== '' || state.caixa.oldestAmount !== 2000) {
+    return false
+  }
+  if (state.incomes.length !== DEFAULT_INCOMES.length || state.expenses.length !== DEFAULT_EXPENSES.length) return false
+  const incomesMatch = DEFAULT_INCOMES.every((income) => {
+    const current = state.incomes.find((item) => item.id === income.id)
+    return current?.amount === income.amount && current.holder === income.holder && !current.custom
+  })
+  const expensesMatch = DEFAULT_EXPENSES.every((expense) => {
+    const current = state.expenses.find((item) => item.id === expense.id)
+    return current?.amount === expense.amount && current.name === expense.name && !current.custom
+  })
+  return incomesMatch && expensesMatch
+}
+
+export function sameState(left: AppState, right: AppState): boolean {
+  return JSON.stringify(left) === JSON.stringify(right)
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   return value as Record<string, unknown>

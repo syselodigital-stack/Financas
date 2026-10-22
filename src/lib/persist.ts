@@ -7,6 +7,8 @@ const CONFIG_KEY = 'rff-supabase-config'
 const HOUSEHOLD_KEY = 'rff-household-key'
 const HOUSEHOLD_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+export const SHARED_HOUSEHOLD_KEY = 'f4e8c2a1-6b3d-4e7f-9a10-2c5d8e7b6a01'
+
 export function loadLocalState(): AppState {
   try {
     const raw = localStorage.getItem(STATE_KEY)
@@ -22,11 +24,12 @@ export function saveLocalState(state: AppState): void {
 }
 
 export function householdKey(): string {
-  const existing = localStorage.getItem(HOUSEHOLD_KEY)
-  if (existing && HOUSEHOLD_PATTERN.test(existing)) return existing
-  const created = crypto.randomUUID()
-  localStorage.setItem(HOUSEHOLD_KEY, created)
-  return created
+  try {
+    localStorage.setItem(HOUSEHOLD_KEY, SHARED_HOUSEHOLD_KEY)
+  } catch {
+    /* o modo privado pode bloquear o armazenamento */
+  }
+  return SHARED_HOUSEHOLD_KEY
 }
 
 export function normalizeHouseholdKey(value: string): string {
@@ -133,4 +136,24 @@ export async function pushRemoteState(client: SupabaseClient, state: AppState): 
   )
 
   if (error) throw new Error(error.message)
+}
+
+export function watchHousehold(client: SupabaseClient, onChange: () => void): () => void {
+  const channel = client
+    .channel('family-state')
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'household_state',
+        filter: `household_key=eq.${householdKey()}`,
+      },
+      () => onChange(),
+    )
+    .subscribe()
+
+  return () => {
+    void client.removeChannel(channel)
+  }
 }

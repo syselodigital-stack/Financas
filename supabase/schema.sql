@@ -43,5 +43,13 @@ with check (household_key = public.request_household_key());
 
 grant select, insert, update, delete on table public.household_state to anon, authenticated;
 
+do $$
+begin
+  alter publication supabase_realtime add table public.household_state;
+exception
+  when duplicate_object then null;
+  when undefined_object then null;
+end $$;
+
 comment on table public.household_state is
   'Um registro por família. O payload guarda o mapa financeiro completo.';

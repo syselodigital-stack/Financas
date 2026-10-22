@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AllocationBoard } from './components/AllocationBoard'
 import { AppTabs, readTab, storeTab, type TabId } from './components/AppTabs'
 import { DailyLedger } from './components/DailyLedger'
@@ -6,19 +6,19 @@ import { IncomePanel } from './components/IncomePanel'
 import { PanelHome } from './components/PanelHome'
 import { ProjectionPanel } from './components/ProjectionPanel'
 import { SyncPanel } from './components/SyncPanel'
-import { defaultState } from './lib/defaults'
+import { defaultState, isPristineState, sameState } from './lib/defaults'
 import { allocate, projectYear, upsertClosing } from './lib/engine'
 import { daysInMonth, formatBRL, isDateInMonth, monthLabel, monthsOfYear, yearOf } from './lib/money'
 import {
   createHouseholdClient,
   explainSyncError,
-  householdKey,
   loadLocalState,
   loadSupabaseConfig,
   pullRemoteState,
   pushRemoteState,
   saveLocalState,
   saveSupabaseConfig,
+  watchHousehold,
 } from './lib/persist'
 import type { AppState, SupabaseConfig } from './lib/types'
 
@@ -26,8 +26,10 @@ export default function App() {
   const [state, setState] = useState<AppState>(() => loadLocalState())
   const [ready, setReady] = useState(false)
   const [config, setConfig] = useState<SupabaseConfig | null>(() => loadSupabaseConfig())
-  const [familyKey, setFamilyKey] = useState(() => householdKey())
   const [syncNote, setSyncNote] = useState('Salvo neste navegador')
+  const applyingRemote = useRef(false)
+  const localDirty = useRef(false)
+  const pushGen = useRef(0)
   const [notice, setNotice] = useState('')
   const [tab, setTab] = useState<TabId>(() => readTab())
 
@@ -102,12 +104,22 @@ export default function App() {
       return
     }
 
-    const client = createHouseholdClient(current, familyKey)
+    const client = createHouseholdClient(current)
+    const local = loadLocalState()
     pullRemoteState(client)
-      .then((remote) => {
+      .then(async (remote) => {
         if (cancel) return
-        if (remote) setState(remote)
-        setSyncNote('Sincronizado com Supabase')
+        if (remote && !isPristineState(remote)) {
+          applyingRemote.current = true
+          setState(remote)
+        } else if (!isPristineState(local)) {
+          await pushRemoteState(client, local)
+        } else if (remote) {
+          applyingRemote.current = true
+          setState(remote)
+        }
+        if (cancel) return
+        setSyncNote('Sincronizado. Os outros navegadores veem estes lançamentos.')
         setReady(true)
       })
       .catch((error: unknown) => {
@@ -120,26 +132,75 @@ export default function App() {
     return () => {
       cancel = true
     }
-  }, [config, familyKey])
+  }, [config])
 
   useEffect(() => {
     if (!ready) return
     saveLocalState(state)
+    if (applyingRemote.current) {
+      applyingRemote.current = false
+      localDirty.current = false
+      return
+    }
     const current = loadSupabaseConfig()
-    if (!current) return
+    if (!current || isPristineState(state)) {
+      localDirty.current = false
+      return
+    }
 
-    const client = createHouseholdClient(current, familyKey)
+    const client = createHouseholdClient(current)
+    const generation = ++pushGen.current
+    localDirty.current = true
     const timer = window.setTimeout(() => {
       pushRemoteState(client, state)
-        .then(() => setSyncNote('Sincronizado com Supabase'))
+        .then(() => setSyncNote('Sincronizado. Os outros navegadores veem estes lançamentos.'))
         .catch((error: unknown) => {
           const text = error instanceof Error ? error.message : 'Falha ao salvar no Supabase'
           setSyncNote(explainSyncError(text))
         })
+        .finally(() => {
+          if (pushGen.current === generation) localDirty.current = false
+        })
     }, 700)
 
     return () => window.clearTimeout(timer)
-  }, [state, ready, config, familyKey])
+  }, [state, ready, config])
+
+  useEffect(() => {
+    if (!ready) return
+    const current = loadSupabaseConfig()
+    if (!current) return
+
+    const client = createHouseholdClient(current)
+    let cancel = false
+    const refresh = () => {
+      if (localDirty.current) return
+      pullRemoteState(client)
+        .then((remote) => {
+          if (cancel || !remote) return
+          setState((currentState) => {
+            if (sameState(currentState, remote)) return currentState
+            applyingRemote.current = true
+            return remote
+          })
+        })
+        .catch(() => {
+          /* a próxima leitura tenta de novo */
+        })
+    }
+
+    const timer = window.setInterval(refresh, 2000)
+    const onFocus = () => refresh()
+    window.addEventListener('focus', onFocus)
+    const stopWatch = watchHousehold(client, refresh)
+
+    return () => {
+      cancel = true
+      window.clearInterval(timer)
+      window.removeEventListener('focus', onFocus)
+      stopWatch()
+    }
+  }, [ready, config])
 
   function registerMonth() {
     const snapshot = allocate(state)
@@ -407,18 +468,11 @@ export default function App() {
             <div className="space-y-4">
               <SyncPanel
                 config={config}
-                familyKey={familyKey}
                 note={syncNote}
-                onFamilyKey={setFamilyKey}
                 onSave={(next) => {
                   saveSupabaseConfig(next)
                   setReady(false)
                   setConfig(next)
-                }}
-                onClear={() => {
-                  saveSupabaseConfig(null)
-                  setConfig(null)
-                  setSyncNote('Salvo neste navegador')
                 }}
               />
               <div className="flex justify-end">
