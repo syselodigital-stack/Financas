@@ -5,13 +5,15 @@ import { DailyLedger } from './components/DailyLedger'
 import { IncomePanel } from './components/IncomePanel'
 import { PanelHome } from './components/PanelHome'
 import { ProjectionPanel } from './components/ProjectionPanel'
+import { ReportsView } from './components/ReportsView'
 import { SyncPanel } from './components/SyncPanel'
-import { defaultState, isPristineState, keepDrafts, sameState } from './lib/defaults'
+import { defaultState, isPristineState, keepDrafts, resolveCategoryId, sameState, sortedCategories } from './lib/defaults'
 import { allocate, projectYear, upsertClosing } from './lib/engine'
 import { daysInMonth, formatBRL, isDateInMonth, monthLabel, monthsOfYear, yearOf } from './lib/money'
 import {
   createHouseholdClient,
   explainSyncError,
+  insertRemoteCategory,
   loadLocalState,
   loadSupabaseConfig,
   pullRemoteState,
@@ -20,7 +22,7 @@ import {
   saveSupabaseConfig,
   watchHousehold,
 } from './lib/persist'
-import type { AppState, SupabaseConfig } from './lib/types'
+import type { AppState, ExpenseCategory, Priority, SupabaseConfig } from './lib/types'
 
 export default function App() {
   const [state, setState] = useState<AppState>(() => loadLocalState())
@@ -96,6 +98,30 @@ export default function App() {
     window.scrollTo({ top: 0 })
   }
 
+  function createCategory(input: { name: string; priority_level: Priority }): ExpenseCategory | null {
+    const name = input.name.trim().slice(0, 80)
+    if (!name || /^outros$/i.test(name)) return null
+    const exists = state.categories.some((item) => item.name.trim().toLowerCase() === name.toLowerCase())
+    if (exists) return null
+    const category: ExpenseCategory = {
+      id: crypto.randomUUID(),
+      name,
+      priority_level: input.priority_level,
+    }
+    setState((current) => ({
+      ...current,
+      categories: sortedCategories([...current.categories, category]),
+    }))
+    const current = loadSupabaseConfig()
+    if (current) {
+      const client = createHouseholdClient(current)
+      void insertRemoteCategory(client, category).catch(() => {
+        /* o push completo tenta de novo */
+      })
+    }
+    return category
+  }
+
   useEffect(() => {
     let cancel = false
     const current = loadSupabaseConfig()
@@ -110,11 +136,12 @@ export default function App() {
     pullRemoteState(client)
       .then(async (remote) => {
         if (cancel) return
+        // Produção não-vazia sempre vence: nunca sobrescrever o remoto com mapa inicial local.
         if (remote && !isPristineState(remote)) {
           seenCustom.current = true
           applyingRemote.current = true
           setState(remote)
-        } else if (!isPristineState(local)) {
+        } else if (!isPristineState(local) && (!remote || isPristineState(remote))) {
           seenCustom.current = true
           await pushRemoteState(client, local)
         } else if (remote) {
@@ -233,7 +260,7 @@ export default function App() {
               O essencial primeiro. A sobra vira reserva.
             </h1>
             <p className="mt-3 max-w-xl text-sm leading-6 text-[#d7e4e1]">
-              Receita, diário e contas ficam em abas. O lançamento do dia entra em alimentação, combustível, contas ou outros.
+              Receita, diário e contas ficam em abas. O lançamento do dia entra na categoria que você cadastrar.
             </p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -351,9 +378,11 @@ export default function App() {
               <DailyLedger
                 month={state.activeMonth}
                 entries={state.dailyExpenses}
+                categories={state.categories}
                 incomes={calendarIncomes}
                 bills={calendarBills}
                 unplaced={unplaced}
+                onCreateCategory={createCategory}
                 onAdd={(entry) =>
                   setState((current) => ({
                     ...current,
@@ -374,6 +403,8 @@ export default function App() {
                 payments={monthPayments}
                 dueDates={billDates}
                 entries={state.dailyExpenses}
+                categories={state.categories}
+                onCreateCategory={createCategory}
                 onAmount={(id, amount) =>
                   setState((current) => ({
                     ...current,
@@ -388,13 +419,41 @@ export default function App() {
                     ),
                   }))
                 }
+                onCategory={(id, categoryId) =>
+                  setState((current) => {
+                    const category = current.categories.find((item) => item.id === categoryId)
+                    return {
+                      ...current,
+                      expenses: current.expenses.map((expense) =>
+                        expense.id === id
+                          ? {
+                              ...expense,
+                              categoryId,
+                              priority: category?.priority_level ?? expense.priority,
+                            }
+                          : expense,
+                      ),
+                    }
+                  })
+                }
                 onAdd={() => {
                   const id = crypto.randomUUID()
+                  const categoryId = resolveCategoryId(state.categories)
+                  const category = state.categories.find((item) => item.id === categoryId)
                   setState((current) => ({
                     ...current,
                     expenses: [
                       ...current.expenses,
-                      { id, name: '', detail: '', amount: 0, priority: 3, custom: true, editable: true },
+                      {
+                        id,
+                        name: '',
+                        detail: '',
+                        amount: 0,
+                        priority: category?.priority_level ?? 3,
+                        categoryId,
+                        custom: true,
+                        editable: true,
+                      },
                     ],
                   }))
                   queueMicrotask(() => {
@@ -453,6 +512,18 @@ export default function App() {
                 }
               />
             </div>
+          )}
+
+          {tab === 'relatorios' && (
+            <ReportsView
+              result={result}
+              categories={state.categories}
+              entries={state.dailyExpenses}
+              month={state.activeMonth}
+              monthLabel={monthLabel(state.activeMonth)}
+              caixa={state.caixa}
+              reserveOpening={state.reserveOpening}
+            />
           )}
 
           {tab === 'fundo' && (

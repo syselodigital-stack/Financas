@@ -62,6 +62,9 @@ export function PanelHome({
         <button type="button" onClick={() => onOpen('diario')} className="rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-ink ring-1 ring-line">
           Ver o mês
         </button>
+        <button type="button" onClick={() => onOpen('relatorios')} className="rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-ink ring-1 ring-line">
+          Ver relatórios
+        </button>
         <button type="button" onClick={() => onOpen('fundo')} className="rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-ink ring-1 ring-line">
           Ver o fundo
         </button>

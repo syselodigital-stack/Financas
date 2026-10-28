@@ -1,14 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CurrencyField } from './CurrencyField'
+import { CategoryPicker } from './CategoryPicker'
 import { dayHeading, formatBRL, mondayIndex, monthDates, weekdayHeaders } from '../lib/money'
-import type { DailyCategory, DailyExpense } from '../lib/types'
-
-const CATEGORIES: { id: DailyCategory; label: string }[] = [
-  { id: 'alimentacao', label: 'Alimentação' },
-  { id: 'combustivel', label: 'Combustível' },
-  { id: 'contas', label: 'Contas' },
-  { id: 'outros', label: 'Outros' },
-]
+import { resolveCategoryId, sortedCategories } from '../lib/defaults'
+import type { DailyExpense, ExpenseCategory, Priority } from '../lib/types'
 
 interface CalendarItem {
   id: string
@@ -20,33 +15,44 @@ interface CalendarItem {
 interface DailyLedgerProps {
   month: string
   entries: DailyExpense[]
+  categories: ExpenseCategory[]
   incomes: CalendarItem[]
   bills: CalendarItem[]
   unplaced: string[]
   onAdd: (entry: Omit<DailyExpense, 'id'>) => void
   onRemove: (id: string) => void
+  onCreateCategory: (input: { name: string; priority_level: Priority }) => ExpenseCategory | null
 }
 
-export function DailyLedger({ month, entries, incomes, bills, unplaced, onAdd, onRemove }: DailyLedgerProps) {
+export function DailyLedger({
+  month,
+  entries,
+  categories,
+  incomes,
+  bills,
+  unplaced,
+  onAdd,
+  onRemove,
+  onCreateCategory,
+}: DailyLedgerProps) {
   const dates = useMemo(() => monthDates(month), [month])
+  const ordered = sortedCategories(categories)
   const [selected, setSelected] = useState(() => preferredDay(month))
   const [description, setDescription] = useState('')
   const [amount, setAmount] = useState(0)
-  const [category, setCategory] = useState<DailyCategory>('alimentacao')
+  const [categoryId, setCategoryId] = useState(() => resolveCategoryId(categories))
 
   useEffect(() => {
     setSelected(preferredDay(month))
   }, [month])
 
+  useEffect(() => {
+    setCategoryId((current) => resolveCategoryId(categories, current))
+  }, [categories])
+
   const monthEntries = entries.filter((entry) => entry.date.startsWith(month))
   const selectedEntries = monthEntries.filter((entry) => entry.date === selected)
   const total = sum(monthEntries)
-  const byCategory = {
-    alimentacao: sum(monthEntries.filter((entry) => entry.category === 'alimentacao')),
-    combustivel: sum(monthEntries.filter((entry) => entry.category === 'combustivel')),
-    contas: sum(monthEntries.filter((entry) => entry.category === 'contas')),
-    outros: sum(monthEntries.filter((entry) => entry.category === 'outros')),
-  }
   const filledDays = new Set(monthEntries.map((entry) => entry.date)).size
   const leading = mondayIndex(dates[0] ?? `${month}-01`)
   const selectedIndex = dates.indexOf(selected)
@@ -56,8 +62,8 @@ export function DailyLedger({ month, entries, incomes, bills, unplaced, onAdd, o
 
   function addEntry() {
     const text = description.trim()
-    if (!text || amount <= 0) return
-    onAdd({ date: selected, description: text, amount, category })
+    if (!text || amount <= 0 || !categoryId) return
+    onAdd({ date: selected, description: text, amount, categoryId })
     setDescription('')
     setAmount(0)
   }
@@ -73,7 +79,7 @@ export function DailyLedger({ month, entries, incomes, bills, unplaced, onAdd, o
         <div>
           <h2 className="font-serif text-2xl">Calendário do mês</h2>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">
-            Cada dia mostra a entrada, a conta e o gasto lançado. O lançamento entra em alimentação, combustível, contas ou outros.
+            Cada dia mostra a entrada, a conta e o gasto lançado. Escolha a categoria cadastrada ou inclua uma nova.
           </p>
         </div>
         <p className="text-right">
@@ -83,10 +89,14 @@ export function DailyLedger({ month, entries, incomes, bills, unplaced, onAdd, o
       </div>
 
       <ul className="mt-4 flex flex-wrap gap-2 text-sm">
-        <li className="rounded-full bg-foam px-3 py-1">Alimentação {formatBRL(byCategory.alimentacao)}</li>
-        <li className="rounded-full bg-foam px-3 py-1">Combustível {formatBRL(byCategory.combustivel)}</li>
-        <li className="rounded-full bg-foam px-3 py-1">Contas {formatBRL(byCategory.contas)}</li>
-        <li className="rounded-full bg-foam px-3 py-1">Outros {formatBRL(byCategory.outros)}</li>
+        {ordered.map((category) => {
+          const value = sum(monthEntries.filter((entry) => entry.categoryId === category.id))
+          return (
+            <li key={category.id} className="rounded-full bg-foam px-3 py-1">
+              {category.name} {formatBRL(value)}
+            </li>
+          )
+        })}
         <li className="rounded-full bg-[#efe6d6] px-3 py-1">
           {filledDays} de {dates.length} dias com lançamento
         </li>
@@ -192,25 +202,19 @@ export function DailyLedger({ month, entries, incomes, bills, unplaced, onAdd, o
                 className="w-full rounded-2xl bg-white px-3 py-2.5 ring-1 ring-line outline-none focus:ring-2 focus:ring-teal"
               />
             </label>
-            <div className="flex flex-wrap gap-2" role="group" aria-label="Categoria">
-              {CATEGORIES.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  aria-pressed={category === item.id}
-                  onClick={() => setCategory(item.id)}
-                  className={`rounded-full px-3 py-1.5 text-sm font-semibold ${
-                    category === item.id ? 'bg-teal text-white' : 'bg-white text-ink ring-1 ring-line'
-                  }`}
-                >
-                  {item.label}
-                </button>
-              ))}
+            <div>
+              <span className="mb-1 block text-xs font-semibold tracking-wide text-muted uppercase">Categoria</span>
+              <CategoryPicker
+                categories={categories}
+                value={categoryId}
+                onChange={setCategoryId}
+                onCreate={onCreateCategory}
+              />
             </div>
             <CurrencyField id="daily-amount" label="Valor do lançamento" value={amount} onChange={setAmount} />
             <button
               type="submit"
-              disabled={!description.trim() || amount <= 0}
+              disabled={!description.trim() || amount <= 0 || !categoryId}
               className="w-full rounded-full bg-teal px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
             >
               Lançar neste dia
@@ -226,7 +230,7 @@ export function DailyLedger({ month, entries, incomes, bills, unplaced, onAdd, o
                 <span>
                   <span className="block font-semibold">{entry.description}</span>
                   <span className="text-xs text-muted">
-                    {CATEGORIES.find((item) => item.id === entry.category)?.label}
+                    {ordered.find((item) => item.id === entry.categoryId)?.name ?? 'Categoria'}
                   </span>
                 </span>
                 <span className="flex items-center gap-3">

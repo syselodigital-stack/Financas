@@ -1,10 +1,14 @@
 import type { AllocationResult, AppState, DailyExpense, ExpenseItem, MonthClosing, ProjectionPoint } from './types'
 import { fromCents, monthsOfYear, monthLabel, monthShort, toCents, yearOf } from './money'
+import { sortedCategories } from './defaults'
 
-function dailyCents(entries: DailyExpense[], month: string, category: DailyExpense['category']): number {
-  return entries
-    .filter((entry) => entry.date.startsWith(month) && entry.category === category)
-    .reduce((sum, entry) => sum + toCents(entry.amount), 0)
+function dailyCentsByCategory(entries: DailyExpense[], month: string): Map<string, number> {
+  const totals = new Map<string, number>()
+  for (const entry of entries) {
+    if (!entry.date.startsWith(month)) continue
+    totals.set(entry.categoryId, (totals.get(entry.categoryId) ?? 0) + toCents(entry.amount))
+  }
+  return totals
 }
 
 function orderedExpenses(expenses: ExpenseItem[]): ExpenseItem[] {
@@ -15,49 +19,43 @@ function orderedExpenses(expenses: ExpenseItem[]): ExpenseItem[] {
 }
 
 export function allocate(
-  state: Pick<AppState, 'incomes' | 'expenses' | 'dailyExpenses' | 'activeMonth'>,
+  state: Pick<AppState, 'categories' | 'incomes' | 'expenses' | 'dailyExpenses' | 'activeMonth'>,
 ): AllocationResult {
   const dailyExpenses = state.dailyExpenses ?? []
-  const foodDaily = dailyCents(dailyExpenses, state.activeMonth, 'alimentacao')
-  const fuelDaily = dailyCents(dailyExpenses, state.activeMonth, 'combustivel')
-  const billDaily = dailyCents(dailyExpenses, state.activeMonth, 'contas')
-  const otherDaily = dailyCents(dailyExpenses, state.activeMonth, 'outros')
+  const categories = sortedCategories(state.categories ?? [])
+  const dailyByCategory = dailyCentsByCategory(dailyExpenses, state.activeMonth)
   const expenses = state.expenses.map((expense) => ({ ...expense }))
-  if (foodDaily > 0 && !expenses.some((expense) => expense.id === 'alimentacao')) {
+  const claimed = new Set<string>()
+
+  for (const category of categories) {
+    const cents = dailyByCategory.get(category.id) ?? 0
+    if (cents <= 0) continue
+    const match = expenses.find((expense) => expense.categoryId === category.id && !expense.id.startsWith('diarias-'))
+    if (match) {
+      claimed.add(category.id)
+      continue
+    }
     expenses.push({
-      id: 'diarias-alimentacao',
-      name: 'Alimentação do dia',
+      id: `diarias-${category.id}`,
+      name: `${category.name} do dia`,
       detail: 'Lançamentos do mês',
-      amount: fromCents(foodDaily),
-      priority: 1,
+      amount: fromCents(cents),
+      priority: category.priority_level,
+      categoryId: category.id,
     })
+    claimed.add(category.id)
   }
-  if (fuelDaily > 0 && !expenses.some((expense) => expense.id === 'combustivel')) {
+
+  for (const [categoryId, cents] of dailyByCategory) {
+    if (cents <= 0 || claimed.has(categoryId)) continue
+    const category = categories.find((item) => item.id === categoryId)
     expenses.push({
-      id: 'diarias-combustivel',
-      name: 'Combustível do dia',
+      id: `diarias-${categoryId}`,
+      name: `${category?.name ?? 'Categoria'} do dia`,
       detail: 'Lançamentos do mês',
-      amount: fromCents(fuelDaily),
-      priority: 1,
-    })
-  }
-  if (otherDaily > 0) {
-    const waterIndex = expenses.findIndex((expense) => expense.id === 'agua')
-    expenses.splice(waterIndex === -1 ? expenses.length : waterIndex + 1, 0, {
-      id: 'diarias-outros',
-      name: 'Outros do dia',
-      detail: 'Lançamentos avulsos do mês',
-      amount: fromCents(otherDaily),
-      priority: 1,
-    })
-  }
-  if (billDaily > 0) {
-    expenses.push({
-      id: 'diarias-contas',
-      name: 'Contas do dia',
-      detail: 'Lançamentos do mês',
-      amount: fromCents(billDaily),
-      priority: 3,
+      amount: fromCents(cents),
+      priority: category?.priority_level ?? 3,
+      categoryId,
     })
   }
 
@@ -68,7 +66,16 @@ export function allocate(
   let sombra = 0
 
   const lines = orderedExpenses(expenses).map((expense, index) => {
-    const extra = expense.id === 'alimentacao' ? foodDaily : expense.id === 'combustivel' ? fuelDaily : 0
+    const hasPlannedMatch = !expense.id.startsWith('diarias-')
+    const extra =
+      hasPlannedMatch && dailyByCategory.has(expense.categoryId)
+        ? (() => {
+            const first = expenses.find(
+              (item) => item.categoryId === expense.categoryId && !item.id.startsWith('diarias-'),
+            )
+            return first?.id === expense.id ? (dailyByCategory.get(expense.categoryId) ?? 0) : 0
+          })()
+        : 0
     const due = toCents(expense.amount) + extra
     totalDue += due
     const locked = expense.id.startsWith('diarias-')
@@ -101,7 +108,7 @@ export function allocate(
       expense,
       order: index + 1,
       due: fromCents(due),
-        dailyAmount: fromCents(extra),
+      dailyAmount: fromCents(extra),
       locked,
       allocated: fromCents(allocated),
       uncovered: fromCents(uncovered),

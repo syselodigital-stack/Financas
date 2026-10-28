@@ -1,6 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import type { AppState, SupabaseConfig } from './types'
-import { sanitizeState } from './defaults'
+import type { AppState, ExpenseCategory, SupabaseConfig } from './types'
+import { sanitizeCategories, sanitizeState } from './defaults'
 
 const STATE_KEY = 'rff-state-v1'
 const CONFIG_KEY = 'rff-supabase-config'
@@ -89,7 +89,10 @@ export function projectUrl(value: string): string | null {
 
 export function explainSyncError(message: string): string {
   const text = message.toLowerCase()
-  if (text.includes('household_state') && (text.includes('does not exist') || text.includes('schema cache') || text.includes('could not find'))) {
+  if (
+    (text.includes('household_state') || text.includes('categories')) &&
+    (text.includes('does not exist') || text.includes('schema cache') || text.includes('could not find'))
+  ) {
     return 'A tabela ainda não existe. Execute supabase/schema.sql no SQL Editor do projeto e tente de novo.'
   }
   if (text.includes('invalid api key') || text.includes('apikey') || text.includes('jwt')) {
@@ -113,6 +116,56 @@ export function createHouseholdClient(config: SupabaseConfig, key = householdKey
   })
 }
 
+export async function pullRemoteCategories(client: SupabaseClient): Promise<ExpenseCategory[] | null> {
+  const { data, error } = await client
+    .from('categories')
+    .select('id, name, priority_level')
+    .eq('household_key', householdKey())
+    .order('priority_level', { ascending: true })
+    .order('name', { ascending: true })
+
+  if (error) {
+    if (isMissingTable(error.message)) return null
+    throw new Error(error.message)
+  }
+  if (!data || data.length === 0) return []
+  return sanitizeCategories(data)
+}
+
+export async function pushRemoteCategories(client: SupabaseClient, categories: ExpenseCategory[]): Promise<void> {
+  const key = householdKey()
+  if (categories.length === 0) return
+
+  const rows = categories.map((category) => ({
+    id: category.id,
+    household_key: key,
+    name: category.name,
+    priority_level: category.priority_level,
+  }))
+
+  const { error } = await client.from('categories').upsert(rows, { onConflict: 'id' })
+  if (error) {
+    if (isMissingTable(error.message)) return
+    throw new Error(error.message)
+  }
+}
+
+export async function insertRemoteCategory(client: SupabaseClient, category: ExpenseCategory): Promise<void> {
+  const { error } = await client.from('categories').upsert(
+    {
+      id: category.id,
+      household_key: householdKey(),
+      name: category.name,
+      priority_level: category.priority_level,
+    },
+    { onConflict: 'id' },
+  )
+  if (error) {
+    if (isMissingTable(error.message)) return
+    throw new Error(error.message)
+  }
+}
+
 export async function pullRemoteState(client: SupabaseClient): Promise<AppState | null> {
   const { data, error } = await client
     .from('household_state')
@@ -121,8 +174,20 @@ export async function pullRemoteState(client: SupabaseClient): Promise<AppState 
     .maybeSingle()
 
   if (error) throw new Error(error.message)
-  if (!data?.payload) return null
-  return sanitizeState(data.payload)
+
+  const remoteCategories = await pullRemoteCategories(client)
+  if (!data?.payload) {
+    if (remoteCategories && remoteCategories.length > 0) {
+      return sanitizeState({ ...sanitizeState(null), categories: remoteCategories })
+    }
+    return null
+  }
+
+  const state = sanitizeState(data.payload)
+  if (remoteCategories && remoteCategories.length > 0) {
+    return sanitizeState({ ...state, categories: remoteCategories })
+  }
+  return state
 }
 
 export async function pushRemoteState(client: SupabaseClient, state: AppState): Promise<void> {
@@ -136,9 +201,11 @@ export async function pushRemoteState(client: SupabaseClient, state: AppState): 
   )
 
   if (error) throw new Error(error.message)
+  await pushRemoteCategories(client, state.categories)
 }
 
 export function watchHousehold(client: SupabaseClient, onChange: () => void): () => void {
+  const key = householdKey()
   const channel = client
     .channel('family-state')
     .on(
@@ -147,7 +214,17 @@ export function watchHousehold(client: SupabaseClient, onChange: () => void): ()
         event: '*',
         schema: 'public',
         table: 'household_state',
-        filter: `household_key=eq.${householdKey()}`,
+        filter: `household_key=eq.${key}`,
+      },
+      () => onChange(),
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'categories',
+        filter: `household_key=eq.${key}`,
       },
       () => onChange(),
     )
@@ -156,4 +233,9 @@ export function watchHousehold(client: SupabaseClient, onChange: () => void): ()
   return () => {
     void client.removeChannel(channel)
   }
+}
+
+function isMissingTable(message: string): boolean {
+  const text = message.toLowerCase()
+  return text.includes('does not exist') || text.includes('schema cache') || text.includes('could not find')
 }

@@ -8,24 +8,29 @@ export interface IncomeSource {
   custom?: boolean
 }
 
+export interface ExpenseCategory {
+  id: string
+  name: string
+  priority_level: Priority
+}
+
 export interface ExpenseItem {
   id: string
   name: string
   detail: string
   amount: number
   priority: Priority
+  categoryId: string
   editable?: boolean
   custom?: boolean
 }
-
-export type DailyCategory = 'alimentacao' | 'combustivel' | 'contas' | 'outros'
 
 export interface DailyExpense {
   id: string
   date: string
   description: string
   amount: number
-  category: DailyCategory
+  categoryId: string
 }
 
 export interface CaixaContract {
@@ -62,6 +67,7 @@ export interface ExpenseDue {
 }
 
 export interface AppState {
+  categories: ExpenseCategory[]
   incomes: IncomeSource[]
   expenses: ExpenseItem[]
   dailyExpenses: DailyExpense[]

@@ -1,9 +1,10 @@
-export type TabId = 'painel' | 'caixa' | 'diario' | 'fundo' | 'ajustes'
+export type TabId = 'painel' | 'caixa' | 'diario' | 'relatorios' | 'fundo' | 'ajustes'
 
 export const TABS: { id: TabId; label: string; short: string }[] = [
   { id: 'painel', label: 'Painel', short: 'Painel' },
   { id: 'caixa', label: 'Caixa', short: 'Caixa' },
   { id: 'diario', label: 'Diário', short: 'Diário' },
+  { id: 'relatorios', label: 'Relatórios', short: 'Relat.' },
   { id: 'fundo', label: 'Fundo', short: 'Fundo' },
   { id: 'ajustes', label: 'Ajustes', short: 'Ajustes' },
 ]
@@ -12,6 +13,7 @@ const TAB_KEY = 'rff-tab'
 
 export function readTab(): TabId {
   if (window.location.hash === '#diario' || window.location.hash === '#abatimento') return 'diario'
+  if (window.location.hash === '#relatorios' || window.location.hash === '#reports') return 'relatorios'
   try {
     const saved = sessionStorage.getItem(TAB_KEY)
     if (saved === 'mapa') return 'diario'
@@ -43,7 +45,7 @@ export function AppTabs({ tab, onChange, badges }: AppTabsProps) {
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       aria-label="Seções"
     >
-      <div className="mx-auto grid max-w-6xl grid-cols-5 md:flex md:px-6" role="tablist">
+      <div className="mx-auto grid max-w-6xl grid-cols-6 md:flex md:px-6" role="tablist">
         {TABS.map((item) => {
           const selected = tab === item.id
           return (
@@ -55,7 +57,7 @@ export function AppTabs({ tab, onChange, badges }: AppTabsProps) {
               aria-selected={selected}
               aria-controls={`secao-${item.id}`}
               onClick={() => onChange(item.id)}
-              className={`relative border-t-2 px-1 py-3 text-[11px] leading-tight font-semibold md:border-t-0 md:border-b-2 md:px-3 md:text-sm ${
+              className={`relative border-t-2 px-0.5 py-3 text-[10px] leading-tight font-semibold md:border-t-0 md:border-b-2 md:px-3 md:text-sm ${
                 selected ? 'border-teal text-teal' : 'border-transparent text-muted'
               }`}
             >

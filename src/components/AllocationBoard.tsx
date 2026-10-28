@@ -1,14 +1,8 @@
 import { CurrencyField } from './CurrencyField'
-import { SPEND_GROUPS, spendGroup, type SpendGroup } from '../lib/defaults'
+import { CategoryPicker } from './CategoryPicker'
+import { categoryColor, sortedCategories } from '../lib/defaults'
 import { daysInMonth, formatBRL, formatDueDate } from '../lib/money'
-import type { AllocationLine, AllocationResult, DailyExpense } from '../lib/types'
-
-const GROUP_COLOR: Record<SpendGroup, string> = {
-  alimentacao: '#0f766e',
-  combustivel: '#1e4d6b',
-  contas: '#9a5b2f',
-  outros: '#6b6258',
-}
+import type { AllocationLine, AllocationResult, DailyExpense, ExpenseCategory, Priority } from '../lib/types'
 
 interface MonthPayment {
   paid: boolean
@@ -22,12 +16,15 @@ interface AllocationBoardProps {
   payments: Record<string, MonthPayment>
   dueDates: Record<string, string>
   entries: DailyExpense[]
+  categories: ExpenseCategory[]
   onAmount: (id: string, amount: number) => void
   onName: (id: string, name: string) => void
+  onCategory: (id: string, categoryId: string) => void
   onPayment: (id: string, patch: Partial<MonthPayment>) => void
   onDueDate: (id: string, date: string) => void
   onAdd: () => void
   onRemove: (id: string) => void
+  onCreateCategory: (input: { name: string; priority_level: Priority }) => ExpenseCategory | null
 }
 
 export function AllocationBoard({
@@ -37,13 +34,18 @@ export function AllocationBoard({
   payments,
   dueDates,
   entries,
+  categories,
   onAmount,
   onName,
+  onCategory,
   onPayment,
   onDueDate,
   onAdd,
   onRemove,
+  onCreateCategory,
 }: AllocationBoardProps) {
+  const ordered = sortedCategories(categories)
+  const colorById = Object.fromEntries(ordered.map((category, index) => [category.id, categoryColor(index)]))
   const payable = result.lines.filter((line) => canSettle(line))
   const paidCount = payable.filter((line) => payments[line.expense.id]?.paid).length
   const segments = [
@@ -53,7 +55,7 @@ export function AllocationBoard({
         id: line.expense.id,
         name: line.expense.name,
         amount: line.allocated,
-        color: GROUP_COLOR[spendGroup(line.expense.id)],
+        color: colorById[line.expense.categoryId] ?? categoryColor(0),
       })),
     ...(result.sobra > 0
       ? [{ id: 'sobra', name: 'Sobra do mês', amount: result.sobra, color: '#c2882d' }]
@@ -67,8 +69,8 @@ export function AllocationBoard({
           <div>
             <h2 className="font-serif text-2xl">Abatimento automático</h2>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">
-              O lançamento do dia entra em alimentação, combustível, contas ou outros. As contas previstas
-              ficam no campo Contas, com o dia deste mês.
+              Contas e lançamentos do dia ficam agrupados pelas categorias cadastradas, com o nível de prioridade de cada
+              uma.
             </p>
           </div>
           <div className="flex flex-col items-start gap-2 md:items-end">
@@ -107,10 +109,14 @@ export function AllocationBoard({
                 ))}
           </div>
           <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted">
-            {SPEND_GROUPS.map((group) => (
-              <li key={group.id} className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ background: GROUP_COLOR[group.id] }} />
-                {group.title}
+            {ordered.map((category) => (
+              <li key={category.id} className="flex items-center gap-2">
+                <span
+                  className="h-2.5 w-2.5 rounded-full"
+                  style={{ background: colorById[category.id] }}
+                />
+                {category.name}
+                <span className="text-[11px]">N{category.priority_level}</span>
               </li>
             ))}
             <li className="flex items-center gap-2">
@@ -121,19 +127,24 @@ export function AllocationBoard({
         </div>
       </div>
 
-      {SPEND_GROUPS.map((group) => {
-        const lines = result.lines.filter((line) => spendGroup(line.expense.id) === group.id)
+      {ordered.map((category) => {
+        const lines = result.lines.filter((line) => line.expense.categoryId === category.id)
         const visible = lines.filter((line) => !line.locked)
-        const dayItems = entries.filter((entry) => entry.date.startsWith(month) && entry.category === group.id)
+        const dayItems = entries.filter((entry) => entry.date.startsWith(month) && entry.categoryId === category.id)
         const total = lines.reduce((sum, line) => sum + line.due, 0)
         return (
-          <section key={group.id} className="overflow-hidden rounded-3xl bg-card ring-1 ring-line">
+          <section key={category.id} className="overflow-hidden rounded-3xl bg-card ring-1 ring-line">
             <header className="flex items-start justify-between gap-3 border-b border-line px-5 py-4 md:px-6">
               <div className="flex items-start gap-3">
-                <span className="mt-1 h-3 w-3 shrink-0 rounded-full" style={{ background: GROUP_COLOR[group.id] }} />
+                <span
+                  className="mt-1 h-3 w-3 shrink-0 rounded-full"
+                  style={{ background: colorById[category.id] }}
+                />
                 <div>
-                  <h3 className="font-serif text-xl">{group.title}</h3>
-                  <p className="mt-0.5 text-sm text-muted">{group.description}</p>
+                  <h3 className="font-serif text-xl">{category.name}</h3>
+                  <p className="mt-0.5 text-sm text-muted">
+                    Prioridade nível {category.priority_level}. Contas previstas e lançamentos do dia nesta categoria.
+                  </p>
                 </div>
               </div>
               <p className="font-serif text-2xl tabular-nums">{formatBRL(total)}</p>
@@ -141,77 +152,94 @@ export function AllocationBoard({
 
             {visible.length > 0 && (
               <>
-            <ul className="space-y-3 p-3 md:hidden">
-              {visible.map((line) => (
-                <ExpenseCard
-                  key={line.expense.id}
-                  line={line}
-                  month={month}
-                  payment={payments[line.expense.id]}
-                  dueDate={dueDates[line.expense.id] ?? ''}
-                  onAmount={onAmount}
-                  onName={onName}
-                  onPayment={onPayment}
-                  onRemove={onRemove}
-                  onDueDate={(date) => onDueDate(line.expense.id, date)}
-                />
-              ))}
-            </ul>
-
-            <div className="hidden overflow-x-auto md:block">
-              <table className="w-full min-w-[820px] border-collapse text-left text-sm">
-                <thead>
-                  <tr className="border-b border-line text-xs tracking-wide text-muted uppercase">
-                    <th className="px-4 py-3 font-semibold">Ordem</th>
-                    <th className="px-4 py-3 font-semibold">Descrição</th>
-                    <th className="px-4 py-3 font-semibold">Previsto</th>
-                    <th className="px-4 py-3 font-semibold">Dia</th>
-                    <th className="px-4 py-3 font-semibold">Status</th>
-                    <th className="px-4 py-3 font-semibold">Ação</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visible.map((line, index) => (
-                    <tr
+                <ul className="space-y-3 p-3 md:hidden">
+                  {visible.map((line) => (
+                    <ExpenseCard
                       key={line.expense.id}
-                      className={`border-b border-line last:border-b-0 ${
-                        index % 2 === 1 ? 'bg-paper/70' : 'bg-card'
-                      }`}
-                    >
-                      <td className="px-4 py-4 font-semibold tabular-nums">{String(line.order).padStart(2, '0')}</td>
-                      <td className="px-4 py-4">
-                        <AccountName line={line} fieldId={`expense-name-desktop-${line.expense.id}`} onName={onName} onRemove={onRemove} />
-                      </td>
-                      <td className="px-4 py-4">
-                        <AmountCell line={line} fieldId={`expense-desktop-${line.expense.id}`} onAmount={onAmount} />
-                      </td>
-                      <td className="px-4 py-4">
-                        {line.locked ? (
-                          <span className="text-muted">—</span>
-                        ) : (
-                          <DueDayField
-                            month={month}
-                            name={line.expense.name}
-                            value={dueDates[line.expense.id] ?? ''}
-                            onChange={(date) => onDueDate(line.expense.id, date)}
-                          />
-                        )}
-                      </td>
-                      <td className="px-4 py-4">
-                        <StatusBadge line={line} paid={payments[line.expense.id]?.paid ?? false} />
-                      </td>
-                      <td className="px-4 py-4 whitespace-nowrap">
-                        <ActionCell
-                          line={line}
-                          payment={payments[line.expense.id]}
-                          onPayment={(patch) => onPayment(line.expense.id, patch)}
-                        />
-                      </td>
-                    </tr>
+                      line={line}
+                      month={month}
+                      payment={payments[line.expense.id]}
+                      dueDate={dueDates[line.expense.id] ?? ''}
+                      categories={categories}
+                      onAmount={onAmount}
+                      onName={onName}
+                      onCategory={onCategory}
+                      onPayment={onPayment}
+                      onRemove={onRemove}
+                      onCreateCategory={onCreateCategory}
+                      onDueDate={(date) => onDueDate(line.expense.id, date)}
+                    />
                   ))}
-                </tbody>
-              </table>
-            </div>
+                </ul>
+
+                <div className="hidden overflow-x-auto md:block">
+                  <table className="w-full min-w-[920px] border-collapse text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-line text-xs tracking-wide text-muted uppercase">
+                        <th className="px-4 py-3 font-semibold">Ordem</th>
+                        <th className="px-4 py-3 font-semibold">Descrição</th>
+                        <th className="px-4 py-3 font-semibold">Categoria</th>
+                        <th className="px-4 py-3 font-semibold">Previsto</th>
+                        <th className="px-4 py-3 font-semibold">Dia</th>
+                        <th className="px-4 py-3 font-semibold">Status</th>
+                        <th className="px-4 py-3 font-semibold">Ação</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visible.map((line, index) => (
+                        <tr
+                          key={line.expense.id}
+                          className={`border-b border-line last:border-b-0 ${
+                            index % 2 === 1 ? 'bg-paper/70' : 'bg-card'
+                          }`}
+                        >
+                          <td className="px-4 py-4 font-semibold tabular-nums">{String(line.order).padStart(2, '0')}</td>
+                          <td className="px-4 py-4">
+                            <AccountName
+                              line={line}
+                              fieldId={`expense-name-desktop-${line.expense.id}`}
+                              onName={onName}
+                              onRemove={onRemove}
+                            />
+                          </td>
+                          <td className="px-4 py-4">
+                            <CategorySelect
+                              line={line}
+                              categories={categories}
+                              onCategory={onCategory}
+                              onCreateCategory={onCreateCategory}
+                            />
+                          </td>
+                          <td className="px-4 py-4">
+                            <AmountCell line={line} fieldId={`expense-desktop-${line.expense.id}`} onAmount={onAmount} />
+                          </td>
+                          <td className="px-4 py-4">
+                            {line.locked ? (
+                              <span className="text-muted">—</span>
+                            ) : (
+                              <DueDayField
+                                month={month}
+                                name={line.expense.name}
+                                value={dueDates[line.expense.id] ?? ''}
+                                onChange={(date) => onDueDate(line.expense.id, date)}
+                              />
+                            )}
+                          </td>
+                          <td className="px-4 py-4">
+                            <StatusBadge line={line} paid={payments[line.expense.id]?.paid ?? false} />
+                          </td>
+                          <td className="px-4 py-4 whitespace-nowrap">
+                            <ActionCell
+                              line={line}
+                              payment={payments[line.expense.id]}
+                              onPayment={(patch) => onPayment(line.expense.id, patch)}
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </>
             )}
             <DayEntryList entries={dayItems} />
@@ -227,21 +255,27 @@ function ExpenseCard({
   month,
   payment,
   dueDate,
+  categories,
   onAmount,
   onName,
+  onCategory,
   onPayment,
   onDueDate,
   onRemove,
+  onCreateCategory,
 }: {
   line: AllocationLine
   month: string
   payment?: MonthPayment
   dueDate: string
+  categories: ExpenseCategory[]
   onAmount: (id: string, amount: number) => void
   onName: (id: string, name: string) => void
+  onCategory: (id: string, categoryId: string) => void
   onPayment: (id: string, patch: Partial<MonthPayment>) => void
   onDueDate: (date: string) => void
   onRemove: (id: string) => void
+  onCreateCategory: (input: { name: string; priority_level: Priority }) => ExpenseCategory | null
 }) {
   return (
     <li className="rounded-2xl border border-line bg-paper/40 p-4">
@@ -263,12 +297,50 @@ function ExpenseCard({
           </label>
         )}
       </div>
+      {!line.locked && (
+        <div className="mt-3">
+          <span className="mb-1 block text-xs font-semibold tracking-wide text-muted uppercase">Categoria</span>
+          <CategorySelect
+            line={line}
+            categories={categories}
+            onCategory={onCategory}
+            onCreateCategory={onCreateCategory}
+          />
+        </div>
+      )}
       {canSettle(line) && (
         <div className="mt-3 border-t border-line pt-3">
           <ActionCell line={line} payment={payment} onPayment={(patch) => onPayment(line.expense.id, patch)} />
         </div>
       )}
     </li>
+  )
+}
+
+function CategorySelect({
+  line,
+  categories,
+  onCategory,
+  onCreateCategory,
+}: {
+  line: AllocationLine
+  categories: ExpenseCategory[]
+  onCategory: (id: string, categoryId: string) => void
+  onCreateCategory: (input: { name: string; priority_level: Priority }) => ExpenseCategory | null
+}) {
+  if (line.locked) {
+    const name = categories.find((item) => item.id === line.expense.categoryId)?.name ?? 'Categoria'
+    return <span className="text-sm text-muted">{name}</span>
+  }
+
+  return (
+    <CategoryPicker
+      categories={categories}
+      value={line.expense.categoryId}
+      onChange={(categoryId) => onCategory(line.expense.id, categoryId)}
+      onCreate={onCreateCategory}
+      variant="select"
+    />
   )
 }
 
@@ -320,7 +392,7 @@ function DayEntryList({ entries }: { entries: DailyExpense[] }) {
     <div className="border-t border-line px-5 py-4 md:px-6">
       <p className="text-xs font-semibold tracking-wide text-muted uppercase">Lançado no dia</p>
       {entries.length === 0 ? (
-        <p className="mt-2 text-sm text-muted">Nenhum lançamento neste campo.</p>
+        <p className="mt-2 text-sm text-muted">Nenhum lançamento nesta categoria.</p>
       ) : (
         <ul className="mt-2 space-y-2">
           {entries.map((entry) => (
