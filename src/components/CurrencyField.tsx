@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { formatNumber, parseBRL } from '../lib/money'
+import { coerceMoney, formatNumber, parseBRL } from '../lib/money'
 
 interface CurrencyFieldProps {
   id: string
@@ -16,10 +16,16 @@ export function CurrencyField({ id, label, value, onChange, labelVisibility = 'a
 
   useEffect(() => {
     if (focusedRef.current) return
-    const formatted = formatNumber(value)
+    const formatted = formatNumber(coerceMoney(value))
     textRef.current = formatted
     setText(formatted)
   }, [value])
+
+  function commit(raw: string) {
+    const parsed = parseBRL(raw)
+    onChange(parsed)
+    return parsed
+  }
 
   return (
     <label className="block" htmlFor={id}>
@@ -35,6 +41,7 @@ export function CurrencyField({ id, label, value, onChange, labelVisibility = 'a
         <input
           id={id}
           inputMode="decimal"
+          autoComplete="off"
           className="w-full min-w-0 bg-transparent px-2 py-2.5 text-right text-base font-semibold tabular-nums outline-none"
           value={text}
           onFocus={(event) => {
@@ -44,15 +51,14 @@ export function CurrencyField({ id, label, value, onChange, labelVisibility = 'a
           onChange={(event) => {
             textRef.current = event.target.value
             setText(event.target.value)
-            onChange(parseBRL(event.target.value))
+            commit(event.target.value)
           }}
           onBlur={() => {
-            const parsed = parseBRL(textRef.current)
+            const parsed = commit(textRef.current)
             focusedRef.current = false
             const formatted = formatNumber(parsed)
             textRef.current = formatted
             setText(formatted)
-            onChange(parsed)
           }}
           onKeyDown={(event) => {
             if (event.key === 'Enter') event.currentTarget.blur()

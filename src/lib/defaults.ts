@@ -9,7 +9,7 @@ import type {
   IncomeSource,
   Priority,
 } from './types'
-import { clampMoney, currentMonthKey, isDateInMonth } from './money'
+import { coerceMoney, currentMonthKey, isDateInMonth } from './money'
 
 export const DEFAULT_CATEGORIES: ExpenseCategory[] = [
   { id: 'cat-alimentacao', name: 'Alimentação', priority_level: 1 },
@@ -205,7 +205,7 @@ export function sanitizeState(input: unknown): AppState {
       return {
         ...income,
         holder: typeof saved?.holder === 'string' && saved.holder.trim() ? saved.holder : income.holder,
-        amount: clampMoney(typeof saved?.amount === 'number' ? saved.amount : income.amount),
+        amount: coerceMoney(saved?.amount ?? income.amount),
       }
     }),
     ...sanitizeExtraIncomes(incomeRows),
@@ -221,9 +221,9 @@ export function sanitizeState(input: unknown): AppState {
         Math.floor(typeof caixa?.overdueInstallments === 'number' ? caixa.overdueInstallments : 0),
       ),
       oldestDueDate: typeof caixa?.oldestDueDate === 'string' ? caixa.oldestDueDate : '',
-      oldestAmount: clampMoney(typeof caixa?.oldestAmount === 'number' ? caixa.oldestAmount : 2000),
+      oldestAmount: coerceMoney(caixa?.oldestAmount ?? 2000),
     },
-    reserveOpening: clampMoney(typeof raw.reserveOpening === 'number' ? raw.reserveOpening : 0),
+    reserveOpening: coerceMoney(raw.reserveOpening ?? 0),
     activeMonth:
       typeof raw.activeMonth === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(raw.activeMonth)
         ? raw.activeMonth
@@ -240,10 +240,10 @@ export function sanitizeState(input: unknown): AppState {
         }
         return {
           month: item.month,
-          income: clampMoney(typeof item.income === 'number' ? item.income : 0),
-          committed: clampMoney(typeof item.committed === 'number' ? item.committed : 0),
-          sobra: clampMoney(typeof item.sobra === 'number' ? item.sobra : 0),
-          sombra: clampMoney(typeof item.sombra === 'number' ? item.sombra : 0),
+          income: coerceMoney(item.income),
+          committed: coerceMoney(item.committed),
+          sobra: coerceMoney(item.sobra),
+          sombra: coerceMoney(item.sombra),
         }
       })
       .filter((item): item is AppState['closings'][number] => item !== null)
@@ -312,7 +312,7 @@ function sanitizeExpenses(rows: unknown[], removed: Set<string>, categoryIds: Se
     return {
       ...expense,
       name: readName(row?.name, expense.name),
-      amount: clampMoney(typeof row?.amount === 'number' ? row.amount : expense.amount),
+      amount: coerceMoney(row?.amount ?? expense.amount),
       priority: readPriority(row?.priority, expense.priority),
       categoryId: pickCategoryId(row?.categoryId, categoryIds, expense.categoryId),
     }
@@ -331,7 +331,7 @@ function sanitizeExtraExpenses(rows: Array<Record<string, unknown> | null>, cate
       continue
     }
     const name = typeof row.name === 'string' ? row.name.trim().slice(0, 80) : ''
-    const amount = clampMoney(typeof row.amount === 'number' ? row.amount : 0)
+    const amount = coerceMoney(row.amount)
     if (!name && amount <= 0) continue
     const categoryId =
       typeof row.categoryId === 'string' && categoryIds.has(row.categoryId) ? row.categoryId : fallback
@@ -409,7 +409,7 @@ function sanitizeExtraIncomes(rows: unknown[]): IncomeSource[] {
     const row = asRecord(value)
     if (!row || typeof row.id !== 'string' || !row.id || FIXED_INCOME_IDS.has(row.id) || seen.has(row.id)) continue
     const holder = typeof row.holder === 'string' ? row.holder.trim().slice(0, 80) : ''
-    const amount = clampMoney(typeof row.amount === 'number' ? row.amount : 0)
+    const amount = coerceMoney(row.amount)
     if (!holder && amount <= 0) continue
     seen.add(row.id)
     extras.push({
@@ -448,7 +448,7 @@ function sanitizeDaily(value: unknown, categoryIds: Set<string>): DailyExpense |
   const parsed = new Date(year, month - 1, day)
   if (parsed.getFullYear() !== year || parsed.getMonth() !== month - 1 || parsed.getDate() !== day) return null
 
-  const amount = clampMoney(typeof row.amount === 'number' ? row.amount : 0)
+  const amount = coerceMoney(row.amount)
   if (amount <= 0) return null
 
   return {

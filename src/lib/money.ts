@@ -37,20 +37,45 @@ export function formatCompactBRL(value: number): string {
 }
 
 export function parseBRL(input: string): number {
-  const cleaned = input
+  const cleaned = String(input ?? '')
     .trim()
     .replace(/\s/g, '')
-    .replace(/^R\$/i, '')
+    .replace(/^R\$\.?/i, '')
+    .replace(/[^\d,.-]/g, '')
 
-  if (!cleaned) return 0
+  if (!cleaned || cleaned === '-' || cleaned === ',' || cleaned === '.') return 0
 
   let normalized = cleaned
+
   if (cleaned.includes(',')) {
+    // Formato BR: pontos de milhar e vírgula decimal (ex.: 1.234,56)
     normalized = cleaned.replace(/\./g, '').replace(',', '.')
+  } else {
+    const dotCount = (cleaned.match(/\./g) || []).length
+    if (dotCount > 1) {
+      // Vários pontos sem vírgula → milhar (ex.: 1.234.567)
+      normalized = cleaned.replace(/\./g, '')
+    } else if (dotCount === 1 && /^\d{1,3}(\.\d{3})+$/.test(cleaned)) {
+      // Um ponto em padrão de milhar (ex.: 1.500 → 1500)
+      normalized = cleaned.replace(/\./g, '')
+    }
+    // Caso contrário mantém ponto como decimal (ex.: 12.5)
+  }
+
+  // Se ainda restar vírgula (caso misto residual), força ponto decimal
+  if (normalized.includes(',')) {
+    normalized = normalized.replace(/,/g, '.')
   }
 
   const parsed = Number(normalized)
   return clampMoney(parsed)
+}
+
+/** Aceita number ou string pt-BR/US e devolve float monetário seguro. */
+export function coerceMoney(value: unknown): number {
+  if (typeof value === 'number') return clampMoney(value)
+  if (typeof value === 'string') return parseBRL(value)
+  return 0
 }
 
 const MONTH_LABELS = [

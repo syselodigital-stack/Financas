@@ -191,17 +191,18 @@ export async function pullRemoteState(client: SupabaseClient): Promise<AppState 
 }
 
 export async function pushRemoteState(client: SupabaseClient, state: AppState): Promise<void> {
+  const payload = sanitizeState(state)
   const { error } = await client.from('household_state').upsert(
     {
       household_key: householdKey(),
-      payload: state,
+      payload,
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'household_key' },
   )
 
   if (error) throw new Error(error.message)
-  await pushRemoteCategories(client, state.categories)
+  await pushRemoteCategories(client, payload.categories)
 }
 
 export function watchHousehold(client: SupabaseClient, onChange: () => void): () => void {
