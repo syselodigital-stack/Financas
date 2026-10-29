@@ -13,16 +13,21 @@ export function CurrencyField({ id, label, value, onChange, labelVisibility = 'a
   const [text, setText] = useState(() => formatNumber(value))
   const textRef = useRef(text)
   const focusedRef = useRef(false)
+  const lastEmittedRef = useRef(coerceMoney(value))
 
   useEffect(() => {
-    if (focusedRef.current) return
-    const formatted = formatNumber(coerceMoney(value))
+    const next = coerceMoney(value)
+    // Enquanto digita, ignore eco do próprio onChange. Aceite reset externo (ex.: limpar após lançar).
+    if (focusedRef.current && next === lastEmittedRef.current) return
+    const formatted = formatNumber(next)
     textRef.current = formatted
+    lastEmittedRef.current = next
     setText(formatted)
   }, [value])
 
   function commit(raw: string) {
     const parsed = parseBRL(raw)
+    lastEmittedRef.current = parsed
     onChange(parsed)
     return parsed
   }
@@ -54,11 +59,16 @@ export function CurrencyField({ id, label, value, onChange, labelVisibility = 'a
             commit(event.target.value)
           }}
           onBlur={() => {
-            const parsed = commit(textRef.current)
             focusedRef.current = false
+            const parsed = parseBRL(textRef.current)
             const formatted = formatNumber(parsed)
             textRef.current = formatted
             setText(formatted)
+            // Evita reaplicar o valor antigo depois que o formulário já zerou o campo.
+            if (parsed !== lastEmittedRef.current) {
+              lastEmittedRef.current = parsed
+              onChange(parsed)
+            }
           }}
           onKeyDown={(event) => {
             if (event.key === 'Enter') event.currentTarget.blur()

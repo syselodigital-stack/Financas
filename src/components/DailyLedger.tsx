@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CurrencyField } from './CurrencyField'
 import { CategoryPicker } from './CategoryPicker'
-import { dayHeading, formatBRL, mondayIndex, monthDates, weekdayHeaders } from '../lib/money'
+import { coerceMoney, dayHeading, formatBRL, mondayIndex, monthDates, weekdayHeaders } from '../lib/money'
 import { resolveCategoryId, sortedCategories } from '../lib/defaults'
 import type { DailyExpense, ExpenseCategory, Priority } from '../lib/types'
 
@@ -62,8 +62,9 @@ export function DailyLedger({
 
   function addEntry() {
     const text = description.trim()
-    if (!text || amount <= 0 || !categoryId) return
-    onAdd({ date: selected, description: text, amount, categoryId })
+    const value = coerceMoney(amount)
+    if (!text || value <= 0 || !categoryId) return
+    onAdd({ date: selected, description: text, amount: value, categoryId })
     setDescription('')
     setAmount(0)
   }
