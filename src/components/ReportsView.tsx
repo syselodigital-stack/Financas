@@ -52,9 +52,9 @@ export function ReportsView({
     <section className="space-y-5" aria-label="Relatórios e análise de gargalos">
       <header className="rounded-3xl border border-line bg-card p-5 shadow-sm md:p-6">
         <p className="text-xs font-bold tracking-[0.18em] text-muted uppercase">Relatórios</p>
-        <h2 className="mt-1 font-serif text-3xl">Gastos por categoria · {monthLabel}</h2>
+        <h2 className="mt-1 font-serif text-3xl">Gastos e consolidado · {monthLabel}</h2>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-          Lista completa dos gastos dentro de cada categoria, com o valor individual e o total da categoria.
+          Consolidado por nome (individual + soma bruta) e lista completa por categoria.
         </p>
       </header>
 
@@ -77,6 +77,96 @@ export function ReportsView({
           tone={analysis.sobra > 0 ? 'sage' : 'alert'}
         />
       </div>
+
+      <article className="rounded-3xl border border-line bg-card p-5 shadow-sm md:p-6">
+        <div className="flex flex-col justify-between gap-2 md:flex-row md:items-end">
+          <div>
+            <h3 className="font-serif text-2xl">Consolidado por nome</h3>
+            <p className="mt-1 text-sm text-muted">
+              Soma bruta de cada gasto (ex.: Feira) e a lista de cada ocorrência no mês — para decidir se
+              reforça ou reduz o investimento.
+            </p>
+          </div>
+          <p className="text-sm font-semibold text-ink">
+            {analysis.nameGroups.length} nome{analysis.nameGroups.length === 1 ? '' : 's'} ·{' '}
+            {formatBRL(analysis.nameGroupsTotal)}
+          </p>
+        </div>
+
+        {analysis.nameGroups.length === 0 ? (
+          <p className="mt-4 text-sm text-muted">Nenhum gasto para consolidar neste mês.</p>
+        ) : (
+          <div className="mt-5 space-y-3">
+            {analysis.nameGroups.map((group) => (
+              <details
+                key={group.key}
+                className="group overflow-hidden rounded-2xl border border-line bg-paper/40 open:bg-card"
+              >
+                <summary className="flex cursor-pointer list-none items-start justify-between gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden">
+                  <div className="min-w-0">
+                    <p className="font-serif text-xl">{group.name}</p>
+                    <p className="text-xs text-muted">
+                      {group.count} ocorrência{group.count === 1 ? '' : 's'}
+                      {group.categories.length > 0 ? ` · ${group.categories.join(', ')}` : ''}
+                      {group.share > 0 ? ` · ${group.share.toFixed(0)}% do comprometido` : ''}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="font-serif text-2xl tabular-nums">{formatBRL(group.total)}</p>
+                    <p className="text-[11px] font-semibold tracking-wide text-muted uppercase">Total bruto</p>
+                  </div>
+                </summary>
+                <div className="overflow-x-auto border-t border-line">
+                  <table className="w-full min-w-[480px] border-collapse text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-line text-xs tracking-wide text-muted uppercase">
+                        <th className="px-4 py-2.5 font-semibold">#</th>
+                        <th className="px-4 py-2.5 font-semibold">Detalhe</th>
+                        <th className="px-4 py-2.5 font-semibold">Origem</th>
+                        <th className="px-4 py-2.5 text-right font-semibold">Valor</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.items.map((item, itemIndex) => (
+                        <tr
+                          key={item.id}
+                          className={`border-b border-line last:border-b-0 ${
+                            itemIndex % 2 === 1 ? 'bg-paper/50' : ''
+                          }`}
+                        >
+                          <td className="px-4 py-2.5 tabular-nums text-muted">
+                            {String(itemIndex + 1).padStart(2, '0')}
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <span className="font-semibold">{item.detail || item.name}</span>
+                            {item.categoryName && (
+                              <span className="mt-0.5 block text-xs text-muted">{item.categoryName}</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2.5 text-muted">{item.origin}</td>
+                          <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
+                            {formatBRL(item.amount)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-paper/70">
+                        <td colSpan={3} className="px-4 py-3 text-sm font-semibold">
+                          Soma de {group.name}
+                        </td>
+                        <td className="px-4 py-3 text-right font-serif text-lg font-semibold tabular-nums">
+                          {formatBRL(group.total)}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </details>
+            ))}
+          </div>
+        )}
+      </article>
 
       <article className="rounded-3xl border border-line bg-card p-5 shadow-sm md:p-6">
         <div className="flex flex-col justify-between gap-2 md:flex-row md:items-end">
@@ -526,6 +616,92 @@ function buildAnalysis(
     color: group.color,
   }))
 
+  const categoryNameById = new Map(ordered.map((category) => [category.id, category.name]))
+  const nameBucket = new Map<
+    string,
+    {
+      key: string
+      name: string
+      total: number
+      count: number
+      categories: Set<string>
+      items: Array<{
+        id: string
+        name: string
+        detail: string
+        origin: string
+        categoryName: string
+        amount: number
+      }>
+    }
+  >()
+
+  function pushNameItem(input: {
+    id: string
+    name: string
+    detail: string
+    origin: string
+    categoryName: string
+    amount: number
+  }) {
+    const label = input.name.trim()
+    if (!label || input.amount <= 0) return
+    const key = label.toLocaleLowerCase('pt-BR')
+    const current = nameBucket.get(key)
+    if (!current) {
+      nameBucket.set(key, {
+        key,
+        name: label,
+        total: input.amount,
+        count: 1,
+        categories: new Set(input.categoryName ? [input.categoryName] : []),
+        items: [input],
+      })
+      return
+    }
+    current.total += input.amount
+    current.count += 1
+    if (input.categoryName) current.categories.add(input.categoryName)
+    current.items.push(input)
+  }
+
+  for (const line of result.lines) {
+    if (line.locked || line.expense.amount <= 0) continue
+    pushNameItem({
+      id: `plan-${line.expense.id}`,
+      name: line.expense.name || 'Conta',
+      detail: line.expense.detail ?? '',
+      origin: 'Previsto',
+      categoryName: categoryNameById.get(line.expense.categoryId) ?? '',
+      amount: line.expense.amount,
+    })
+  }
+
+  for (const entry of monthEntries) {
+    pushNameItem({
+      id: `day-${entry.id}`,
+      name: entry.description,
+      detail: formatDueDate(entry.date) ?? entry.date,
+      origin: 'Diário',
+      categoryName: categoryNameById.get(entry.categoryId) ?? '',
+      amount: entry.amount,
+    })
+  }
+
+  const nameGroups = [...nameBucket.values()]
+    .map((group) => ({
+      key: group.key,
+      name: group.name,
+      total: group.total,
+      count: group.count,
+      share: committed > 0 ? (group.total / committed) * 100 : 0,
+      categories: [...group.categories].sort((a, b) => a.localeCompare(b, 'pt-BR')),
+      items: [...group.items].sort((a, b) => b.amount - a.amount || a.detail.localeCompare(b.detail, 'pt-BR')),
+    }))
+    .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, 'pt-BR'))
+
+  const nameGroupsTotal = nameGroups.reduce((sum, group) => sum + group.total, 0)
+
   const flexibleLines = result.lines
     .filter((line) => !line.locked && line.due > 0 && line.expense.priority !== 1)
     .sort((a, b) => b.due - a.due)
@@ -625,6 +801,8 @@ function buildAnalysis(
     prioritySlices,
     categoryGroups,
     categoryRanking,
+    nameGroups,
+    nameGroupsTotal,
     itemCount,
     topCuts,
     topCutsTotal,
