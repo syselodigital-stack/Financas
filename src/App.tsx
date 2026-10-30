@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AllocationBoard } from './components/AllocationBoard'
 import { AppTabs, readTab, storeTab, type TabId } from './components/AppTabs'
-import { DailyLedger } from './components/DailyLedger'
+import { DailyLedger, preferredDay } from './components/DailyLedger'
 import { IncomePanel } from './components/IncomePanel'
 import { PanelHome } from './components/PanelHome'
 import { ProjectionPanel } from './components/ProjectionPanel'
 import { ReportsView } from './components/ReportsView'
+import { ShoppingListView } from './components/ShoppingListView'
 import { SyncPanel } from './components/SyncPanel'
+import { emptyShoppingTrip } from './lib/shopping'
 import { defaultState, isPristineState, keepDrafts, resolveCategoryId, sameState, sortedCategories } from './lib/defaults'
 import { buildDueBillAlerts } from './lib/dueStatus'
 import { allocate, projectYear, upsertClosing } from './lib/engine'
@@ -518,6 +520,78 @@ export default function App() {
                 }
               />
             </div>
+          )}
+
+          {tab === 'feira' && (
+            <ShoppingListView
+              trip={state.shoppingTrip ?? emptyShoppingTrip()}
+              onBudget={(budget) =>
+                setState((current) => ({
+                  ...current,
+                  shoppingTrip: { ...(current.shoppingTrip ?? emptyShoppingTrip()), budget },
+                }))
+              }
+              onAdd={(item) =>
+                setState((current) => {
+                  const trip = current.shoppingTrip ?? emptyShoppingTrip()
+                  return {
+                    ...current,
+                    shoppingTrip: {
+                      ...trip,
+                      items: [...trip.items, { ...item, id: crypto.randomUUID(), inCart: false }],
+                    },
+                  }
+                })
+              }
+              onToggle={(id) =>
+                setState((current) => {
+                  const trip = current.shoppingTrip ?? emptyShoppingTrip()
+                  return {
+                    ...current,
+                    shoppingTrip: {
+                      ...trip,
+                      items: trip.items.map((row) => (row.id === id ? { ...row, inCart: !row.inCart } : row)),
+                    },
+                  }
+                })
+              }
+              onRemove={(id) =>
+                setState((current) => {
+                  const trip = current.shoppingTrip ?? emptyShoppingTrip()
+                  return {
+                    ...current,
+                    shoppingTrip: {
+                      ...trip,
+                      items: trip.items.filter((row) => row.id !== id),
+                    },
+                  }
+                })
+              }
+              onConsolidate={(realTotal) => {
+                if (realTotal <= 0) return
+                const categoryId = resolveCategoryId(state.categories, 'cat-alimentacao')
+                const date = preferredDay(state.activeMonth)
+                setState((current) => {
+                  const trip = current.shoppingTrip ?? emptyShoppingTrip()
+                  return {
+                    ...current,
+                    dailyExpenses: [
+                      ...current.dailyExpenses,
+                      {
+                        id: crypto.randomUUID(),
+                        date,
+                        description: 'Feira / lista de compras',
+                        amount: realTotal,
+                        categoryId,
+                      },
+                    ],
+                    shoppingTrip: { ...trip, items: [] },
+                  }
+                })
+                setNotice(`Feira consolidada: ${formatBRL(realTotal)} em Alimentação.`)
+                openTab('diario')
+              }}
+            />
           )}
 
           {tab === 'relatorios' && (

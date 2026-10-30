@@ -253,7 +253,7 @@ export function DailyLedger({
   )
 }
 
-function preferredDay(month: string): string {
+export function preferredDay(month: string): string {
   const today = new Date()
   const key = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
   if (key === month) return `${month}-${String(today.getDate()).padStart(2, '0')}`

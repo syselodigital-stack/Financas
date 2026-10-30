@@ -8,8 +8,12 @@ import type {
   IncomeReceipt,
   IncomeSource,
   Priority,
+  ShoppingItem,
+  ShoppingTrip,
+  ShoppingUnit,
 } from './types'
 import { coerceMoney, currentMonthKey, isDateInMonth } from './money'
+import { emptyShoppingTrip } from './shopping'
 
 export const DEFAULT_CATEGORIES: ExpenseCategory[] = [
   { id: 'cat-alimentacao', name: 'Alimentação', priority_level: 1 },
@@ -101,10 +105,12 @@ export function defaultState(date = new Date()): AppState {
     receipts: [],
     expenseDues: [],
     removedExpenseIds: [],
+    shoppingTrip: emptyShoppingTrip(),
   }
 }
 
 export function isPristineState(state: AppState): boolean {
+  const trip = state.shoppingTrip ?? emptyShoppingTrip()
   if (
     state.dailyExpenses.length > 0 ||
     state.closings.length > 0 ||
@@ -112,7 +118,9 @@ export function isPristineState(state: AppState): boolean {
     state.receipts.length > 0 ||
     state.expenseDues.length > 0 ||
     state.removedExpenseIds.length > 0 ||
-    state.reserveOpening !== 0
+    state.reserveOpening !== 0 ||
+    trip.budget > 0 ||
+    trip.items.length > 0
   ) {
     return false
   }
@@ -255,7 +263,44 @@ export function sanitizeState(input: unknown): AppState {
     ),
     expenseDues: sanitizeExpenseDues(dueRows, expenseIds),
     removedExpenseIds,
+    shoppingTrip: sanitizeShoppingTrip(raw.shoppingTrip),
   }
+}
+
+function sanitizeShoppingTrip(value: unknown): ShoppingTrip {
+  const raw = asRecord(value)
+  if (!raw) return emptyShoppingTrip()
+  const rows = Array.isArray(raw.items) ? raw.items : []
+  const seen = new Set<string>()
+  const items: ShoppingItem[] = []
+  for (const entry of rows) {
+    const row = asRecord(entry)
+    if (!row) continue
+    const id = typeof row.id === 'string' && row.id ? row.id : crypto.randomUUID()
+    if (seen.has(id)) continue
+    const name = typeof row.name === 'string' ? row.name.trim().slice(0, 80) : ''
+    const quantity = typeof row.quantity === 'number' && Number.isFinite(row.quantity) ? Math.max(0, row.quantity) : 0
+    const unit = sanitizeShoppingUnit(row.unit)
+    const estimatedPrice = coerceMoney(row.estimatedPrice)
+    if (!name || quantity <= 0 || estimatedPrice <= 0) continue
+    seen.add(id)
+    items.push({
+      id,
+      name,
+      quantity,
+      unit,
+      estimatedPrice,
+      inCart: row.inCart === true,
+    })
+  }
+  return {
+    budget: coerceMoney(raw.budget),
+    items,
+  }
+}
+
+function sanitizeShoppingUnit(value: unknown): ShoppingUnit {
+  return value === 'kg' || value === 'un' || value === 'pct' ? value : 'un'
 }
 
 const DEFAULT_EXPENSE_IDS = new Set(DEFAULT_EXPENSES.map((expense) => expense.id))

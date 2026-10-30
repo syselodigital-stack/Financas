@@ -1,9 +1,10 @@
-export type TabId = 'painel' | 'caixa' | 'diario' | 'relatorios' | 'fundo' | 'ajustes'
+export type TabId = 'painel' | 'caixa' | 'diario' | 'feira' | 'relatorios' | 'fundo' | 'ajustes'
 
 export const TABS: { id: TabId; label: string; short: string }[] = [
   { id: 'painel', label: 'Painel', short: 'Painel' },
   { id: 'caixa', label: 'Caixa', short: 'Caixa' },
   { id: 'diario', label: 'Diário', short: 'Diário' },
+  { id: 'feira', label: 'Feira', short: 'Feira' },
   { id: 'relatorios', label: 'Relatórios', short: 'Relat.' },
   { id: 'fundo', label: 'Fundo', short: 'Fundo' },
   { id: 'ajustes', label: 'Ajustes', short: 'Ajustes' },
@@ -13,6 +14,7 @@ const TAB_KEY = 'rff-tab'
 
 export function readTab(): TabId {
   if (window.location.hash === '#diario' || window.location.hash === '#abatimento') return 'diario'
+  if (window.location.hash === '#feira') return 'feira'
   if (window.location.hash === '#relatorios' || window.location.hash === '#reports') return 'relatorios'
   try {
     const saved = sessionStorage.getItem(TAB_KEY)
@@ -45,7 +47,7 @@ export function AppTabs({ tab, onChange, badges }: AppTabsProps) {
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       aria-label="Seções"
     >
-      <div className="mx-auto grid max-w-6xl grid-cols-6 md:flex md:px-6" role="tablist">
+      <div className="mx-auto grid max-w-6xl grid-cols-7 md:flex md:px-6" role="tablist">
         {TABS.map((item) => {
           const selected = tab === item.id
           return (

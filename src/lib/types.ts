@@ -66,6 +66,22 @@ export interface ExpenseDue {
   date: string
 }
 
+export type ShoppingUnit = 'kg' | 'un' | 'pct'
+
+export interface ShoppingItem {
+  id: string
+  name: string
+  quantity: number
+  unit: ShoppingUnit
+  estimatedPrice: number
+  inCart: boolean
+}
+
+export interface ShoppingTrip {
+  budget: number
+  items: ShoppingItem[]
+}
+
 export interface AppState {
   categories: ExpenseCategory[]
   incomes: IncomeSource[]
@@ -79,6 +95,7 @@ export interface AppState {
   receipts: IncomeReceipt[]
   expenseDues: ExpenseDue[]
   removedExpenseIds: string[]
+  shoppingTrip: ShoppingTrip
 }
 
 export type CoverageStatus = 'pending' | 'covered' | 'partial' | 'uncovered'
