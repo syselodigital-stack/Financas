@@ -1,5 +1,7 @@
+import { DueDateAlerts } from './DueDateAlerts'
 import { SummaryCards } from './SummaryCards'
 import { formatBRL } from '../lib/money'
+import type { DueBillAlert } from '../lib/dueStatus'
 import type { TabId } from './AppTabs'
 import type { AllocationResult, IncomeSource } from '../lib/types'
 
@@ -14,6 +16,7 @@ interface PanelHomeProps {
   paidCount: number
   payableCount: number
   installmentCount: number
+  dueAlerts: DueBillAlert[]
   onOpen: (tab: TabId) => void
 }
 
@@ -28,10 +31,12 @@ export function PanelHome({
   paidCount,
   payableCount,
   installmentCount,
+  dueAlerts,
   onOpen,
 }: PanelHomeProps) {
   return (
     <div className="space-y-4">
+      <DueDateAlerts alerts={dueAlerts} />
       <SummaryCards result={result} incomes={incomes} dates={dates} />
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatusTile label="Diário do mês" value={`${filledDays} de ${monthDays} dias`} detail={formatBRL(dailyTotal)} />

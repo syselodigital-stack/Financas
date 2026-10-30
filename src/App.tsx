@@ -8,6 +8,7 @@ import { ProjectionPanel } from './components/ProjectionPanel'
 import { ReportsView } from './components/ReportsView'
 import { SyncPanel } from './components/SyncPanel'
 import { defaultState, isPristineState, keepDrafts, resolveCategoryId, sameState, sortedCategories } from './lib/defaults'
+import { buildDueBillAlerts } from './lib/dueStatus'
 import { allocate, projectYear, upsertClosing } from './lib/engine'
 import { daysInMonth, formatBRL, isDateInMonth, monthLabel, monthsOfYear, yearOf } from './lib/money'
 import {
@@ -66,6 +67,10 @@ export default function App() {
     (state.expenseDues ?? [])
       .filter((item) => item.month === state.activeMonth)
       .map((item) => [item.expenseId, item.date]),
+  )
+  const dueAlerts = useMemo(
+    () => buildDueBillAlerts(state.expenses, state.expenseDues ?? [], state.settlements ?? []),
+    [state.expenses, state.expenseDues, state.settlements],
   )
   const calendarIncomes = state.incomes
     .filter((income) => monthDates[income.id])
@@ -311,6 +316,7 @@ export default function App() {
               paidCount={paidCount}
               payableCount={payableLines.length}
               installmentCount={installmentCount}
+              dueAlerts={dueAlerts}
               onOpen={openTab}
             />
           )}

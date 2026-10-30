@@ -1,6 +1,13 @@
 import { CurrencyField } from './CurrencyField'
 import { CategoryPicker } from './CategoryPicker'
 import { categoryColor, sortedCategories } from '../lib/defaults'
+import {
+  compareByDueDate,
+  dueUrgencyBadgeClass,
+  dueUrgencyLabel,
+  formatDueCountdown,
+  getDueUrgency,
+} from '../lib/dueStatus'
 import { daysInMonth, formatBRL, formatDueDate } from '../lib/money'
 import type { AllocationLine, AllocationResult, DailyExpense, ExpenseCategory, Priority } from '../lib/types'
 
@@ -129,7 +136,13 @@ export function AllocationBoard({
 
       {ordered.map((category) => {
         const lines = result.lines.filter((line) => line.expense.categoryId === category.id)
-        const visible = lines.filter((line) => !line.locked)
+        const visible = lines
+          .filter((line) => !line.locked)
+          .sort((a, b) => {
+            const byDue = compareByDueDate(dueDates[a.expense.id], dueDates[b.expense.id])
+            if (byDue !== 0) return byDue
+            return a.order - b.order
+          })
         const dayItems = entries.filter((entry) => entry.date.startsWith(month) && entry.categoryId === category.id)
         const total = lines.reduce((sum, line) => sum + line.due, 0)
         return (
@@ -173,70 +186,83 @@ export function AllocationBoard({
                 </ul>
 
                 <div className="hidden overflow-x-auto md:block">
-                  <table className="w-full min-w-[920px] border-collapse text-left text-sm">
+                  <table className="w-full min-w-[980px] border-collapse text-left text-sm">
                     <thead>
                       <tr className="border-b border-line text-xs tracking-wide text-muted uppercase">
                         <th className="px-4 py-3 font-semibold">Ordem</th>
                         <th className="px-4 py-3 font-semibold">Descrição</th>
                         <th className="px-4 py-3 font-semibold">Categoria</th>
                         <th className="px-4 py-3 font-semibold">Previsto</th>
-                        <th className="px-4 py-3 font-semibold">Dia</th>
+                        <th className="px-4 py-3 font-semibold">Vencimento</th>
                         <th className="px-4 py-3 font-semibold">Status</th>
                         <th className="px-4 py-3 font-semibold">Ação</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {visible.map((line, index) => (
-                        <tr
-                          key={line.expense.id}
-                          className={`border-b border-line last:border-b-0 ${
-                            index % 2 === 1 ? 'bg-paper/70' : 'bg-card'
-                          }`}
-                        >
-                          <td className="px-4 py-4 font-semibold tabular-nums">{String(line.order).padStart(2, '0')}</td>
-                          <td className="px-4 py-4">
-                            <AccountName
-                              line={line}
-                              fieldId={`expense-name-desktop-${line.expense.id}`}
-                              onName={onName}
-                              onRemove={onRemove}
-                            />
-                          </td>
-                          <td className="px-4 py-4">
-                            <CategorySelect
-                              line={line}
-                              categories={categories}
-                              onCategory={onCategory}
-                              onCreateCategory={onCreateCategory}
-                            />
-                          </td>
-                          <td className="px-4 py-4">
-                            <AmountCell line={line} fieldId={`expense-desktop-${line.expense.id}`} onAmount={onAmount} />
-                          </td>
-                          <td className="px-4 py-4">
-                            {line.locked ? (
-                              <span className="text-muted">—</span>
-                            ) : (
-                              <DueDayField
-                                month={month}
-                                name={line.expense.name}
-                                value={dueDates[line.expense.id] ?? ''}
-                                onChange={(date) => onDueDate(line.expense.id, date)}
+                      {visible.map((line, index) => {
+                        const dueDate = dueDates[line.expense.id] ?? ''
+                        const paid = payments[line.expense.id]?.paid ?? false
+                        return (
+                          <tr
+                            key={line.expense.id}
+                            className={`border-b border-line last:border-b-0 ${
+                              index % 2 === 1 ? 'bg-paper/70' : 'bg-card'
+                            }`}
+                          >
+                            <td className="px-4 py-4 font-semibold tabular-nums">
+                              {String(line.order).padStart(2, '0')}
+                            </td>
+                            <td className="px-4 py-4">
+                              <AccountName
+                                line={line}
+                                fieldId={`expense-name-desktop-${line.expense.id}`}
+                                onName={onName}
+                                onRemove={onRemove}
                               />
-                            )}
-                          </td>
-                          <td className="px-4 py-4">
-                            <StatusBadge line={line} paid={payments[line.expense.id]?.paid ?? false} />
-                          </td>
-                          <td className="px-4 py-4 whitespace-nowrap">
-                            <ActionCell
-                              line={line}
-                              payment={payments[line.expense.id]}
-                              onPayment={(patch) => onPayment(line.expense.id, patch)}
-                            />
-                          </td>
-                        </tr>
-                      ))}
+                            </td>
+                            <td className="px-4 py-4">
+                              <CategorySelect
+                                line={line}
+                                categories={categories}
+                                onCategory={onCategory}
+                                onCreateCategory={onCreateCategory}
+                              />
+                            </td>
+                            <td className="px-4 py-4">
+                              <AmountCell
+                                line={line}
+                                fieldId={`expense-desktop-${line.expense.id}`}
+                                onAmount={onAmount}
+                              />
+                            </td>
+                            <td className="px-4 py-4">
+                              {line.locked ? (
+                                <span className="text-muted">—</span>
+                              ) : (
+                                <div className="space-y-2">
+                                  <DueDayField
+                                    month={month}
+                                    name={line.expense.name}
+                                    value={dueDate}
+                                    onChange={(date) => onDueDate(line.expense.id, date)}
+                                  />
+                                  <DueBadge dueDate={dueDate} paid={paid} />
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-4 py-4">
+                              <StatusBadge line={line} paid={paid} dueDate={dueDate} />
+                            </td>
+                            <td className="px-4 py-4 whitespace-nowrap">
+                              <ActionCell
+                                line={line}
+                                payment={payments[line.expense.id]}
+                                onPayment={(patch) => onPayment(line.expense.id, patch)}
+                              />
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -277,6 +303,8 @@ function ExpenseCard({
   onRemove: (id: string) => void
   onCreateCategory: (input: { name: string; priority_level: Priority }) => ExpenseCategory | null
 }) {
+  const paid = payment?.paid ?? false
+
   return (
     <li className="rounded-2xl border border-line bg-paper/40 p-4">
       <div className="flex items-start justify-between gap-3">
@@ -286,13 +314,16 @@ function ExpenseCard({
             <AccountName line={line} fieldId={`expense-name-${line.expense.id}`} onName={onName} onRemove={onRemove} />
           </div>
         </div>
-        <StatusBadge line={line} paid={payment?.paid ?? false} />
+        <div className="flex flex-col items-end gap-1">
+          <StatusBadge line={line} paid={paid} dueDate={dueDate} />
+          <DueBadge dueDate={dueDate} paid={paid} />
+        </div>
       </div>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <AmountCell line={line} fieldId={`expense-${line.expense.id}`} onAmount={onAmount} />
         {!line.locked && (
           <label className="block">
-            <span className="mb-1 block text-xs font-semibold tracking-wide text-muted uppercase">Dia</span>
+            <span className="mb-1 block text-xs font-semibold tracking-wide text-muted uppercase">Vencimento</span>
             <DueDayField month={month} name={line.expense.name} value={dueDate} onChange={onDueDate} />
           </label>
         )}
@@ -513,10 +544,61 @@ function ActionCell({
   )
 }
 
-function StatusBadge({ line, paid }: { line: AllocationLine; paid: boolean }) {
-  const badge = paid
-    ? { label: 'Pago', className: 'bg-sage-soft text-sage' }
-    : line.status === 'uncovered'
+function DueBadge({ dueDate, paid }: { dueDate: string; paid: boolean }) {
+  const urgency = getDueUrgency(dueDate || null, paid)
+  if (urgency === 'UNSET') {
+    return <span className="text-xs text-muted">Sem vencimento</span>
+  }
+
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <span
+        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold whitespace-nowrap ${dueUrgencyBadgeClass(
+          urgency,
+        )}`}
+      >
+        {dueUrgencyLabel(urgency)}
+      </span>
+      {dueDate && (
+        <span className="text-[11px] font-semibold text-muted">{formatDueCountdown(dueDate, paid)}</span>
+      )}
+    </div>
+  )
+}
+
+function StatusBadge({
+  line,
+  paid,
+  dueDate,
+}: {
+  line: AllocationLine
+  paid: boolean
+  dueDate?: string
+}) {
+  const urgency = getDueUrgency(dueDate || null, paid)
+
+  if (paid || urgency === 'PAID') {
+    return (
+      <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold whitespace-nowrap ${dueUrgencyBadgeClass('PAID')}`}>
+        Pago
+      </span>
+    )
+  }
+
+  if (urgency === 'OVERDUE' || urgency === 'DUE_SOON') {
+    return (
+      <span
+        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold whitespace-nowrap ${dueUrgencyBadgeClass(
+          urgency,
+        )}`}
+      >
+        {dueUrgencyLabel(urgency)}
+      </span>
+    )
+  }
+
+  const badge =
+    line.status === 'uncovered'
       ? { label: 'Descoberto', className: 'bg-alert-soft text-alert' }
       : line.status === 'partial'
         ? { label: 'Parcial', className: 'bg-gold-soft text-gold' }
