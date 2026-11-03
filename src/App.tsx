@@ -245,7 +245,9 @@ export default function App() {
     const snapshot = allocate(state)
     setState(upsertClosing(state, snapshot))
     setNotice(
-      `${monthLabel(state.activeMonth)} registrado. A sobra de ${formatBRL(snapshot.sobra)} entrou na projeção do fundo.`,
+      snapshot.sobra > 0
+        ? `${monthLabel(state.activeMonth)} registrado. A sobra de ${formatBRL(snapshot.sobra)} fica disponível no próximo mês e entra na projeção do fundo.`
+        : `${monthLabel(state.activeMonth)} registrado. Sem sobra positiva para carregar ao próximo mês.`,
     )
   }
 
@@ -328,6 +330,7 @@ export default function App() {
               <IncomePanel
                 incomes={state.incomes}
                 total={result.totalIncome}
+                carriedForward={result.carriedForward}
                 month={state.activeMonth}
                 dates={monthDates}
                 onAmount={(id, amount) =>

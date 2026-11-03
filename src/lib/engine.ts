@@ -1,6 +1,14 @@
 import type { AllocationResult, AppState, DailyExpense, ExpenseItem, MonthClosing, ProjectionPoint } from './types'
-import { fromCents, monthsOfYear, monthLabel, monthShort, toCents, yearOf } from './money'
+import { fromCents, monthsOfYear, monthLabel, monthShort, previousMonthKey, toCents, yearOf } from './money'
 import { sortedCategories } from './defaults'
+
+/** Sobra positiva do fechamento do mês anterior (0 se o mês ainda não foi registrado). */
+export function carriedForwardSobra(closings: MonthClosing[] | undefined, activeMonth: string): number {
+  const previous = previousMonthKey(activeMonth)
+  const closing = (closings ?? []).find((item) => item.month === previous)
+  if (!closing) return 0
+  return fromCents(Math.max(0, toCents(closing.sobra)))
+}
 
 function dailyCentsByCategory(entries: DailyExpense[], month: string): Map<string, number> {
   const totals = new Map<string, number>()
@@ -19,7 +27,7 @@ function orderedExpenses(expenses: ExpenseItem[]): ExpenseItem[] {
 }
 
 export function allocate(
-  state: Pick<AppState, 'categories' | 'incomes' | 'expenses' | 'dailyExpenses' | 'activeMonth'>,
+  state: Pick<AppState, 'categories' | 'incomes' | 'expenses' | 'dailyExpenses' | 'activeMonth' | 'closings'>,
 ): AllocationResult {
   const dailyExpenses = state.dailyExpenses ?? []
   const categories = sortedCategories(state.categories ?? [])
@@ -59,7 +67,9 @@ export function allocate(
     })
   }
 
-  const totalIncomeCents = state.incomes.reduce((sum, income) => sum + toCents(income.amount), 0)
+  const carriedForward = carriedForwardSobra(state.closings, state.activeMonth)
+  const totalIncomeCents =
+    state.incomes.reduce((sum, income) => sum + toCents(income.amount), 0) + toCents(carriedForward)
   let balance = totalIncomeCents
   let totalDue = 0
   let totalAllocated = 0
@@ -124,6 +134,7 @@ export function allocate(
   return {
     lines,
     totalIncome: fromCents(totalIncomeCents),
+    carriedForward,
     totalDue: fromCents(totalDue),
     totalAllocated: fromCents(totalAllocated),
     sobra,

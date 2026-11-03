@@ -31,8 +31,8 @@ export function ProjectionPanel({ opening, points, onOpening, onClear }: Project
         <div>
           <h2 className="font-serif text-2xl">Projeção anual do fundo</h2>
           <p className="mt-1 text-sm leading-6 text-muted">
-            Cada mês soma apenas o saldo positivo. Meses registrados guardam a sobra confirmada; os demais
-            repetem a sobra calculada agora.
+            Cada mês soma apenas o saldo positivo. A sobra registrada também fica disponível no caixa do mês
+            seguinte. Meses sem registro repetem a sobra calculada agora.
           </p>
           <div className="mt-4 max-w-xs">
             <CurrencyField id="reserve-opening" label="Saldo inicial em janeiro" value={opening} onChange={onOpening} />

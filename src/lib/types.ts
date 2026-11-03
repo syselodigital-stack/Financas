@@ -115,6 +115,8 @@ export interface AllocationLine {
 export interface AllocationResult {
   lines: AllocationLine[]
   totalIncome: number
+  /** Sobra positiva do mês anterior registrado, agregada ao caixa deste mês. */
+  carriedForward: number
   totalDue: number
   totalAllocated: number
   sobra: number

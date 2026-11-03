@@ -22,8 +22,8 @@ export function SummaryCards({ result, incomes, dates }: SummaryCardsProps) {
         <p className="mt-3 font-serif text-4xl tracking-tight text-ink md:text-5xl">{formatBRL(result.sobra)}</p>
         <p className="mt-3 max-w-md text-sm leading-6 text-muted">
           {result.sobra > 0
-            ? 'Saldo depois de cobrir as contas e os lançamentos do dia. Este valor alimenta o fundo de reserva.'
-            : 'A receita foi toda consumida. O fundo não recebe aporte neste mês.'}
+            ? 'Saldo depois de cobrir as contas e os lançamentos do dia. Ao registrar o mês, segue para o próximo e alimenta o fundo.'
+            : 'A receita foi toda consumida. Nada passa para o próximo mês nem para o fundo.'}
         </p>
       </article>
 
@@ -55,6 +55,15 @@ export function SummaryCards({ result, incomes, dates }: SummaryCardsProps) {
         <p className="text-xs font-bold tracking-[0.16em] text-muted uppercase">Total de receita</p>
         <p className="mt-2 font-serif text-3xl">{formatBRL(result.totalIncome)}</p>
         <ul className="mt-4 space-y-2 text-sm">
+          {result.carriedForward > 0 && (
+            <li className="flex items-center justify-between gap-3">
+              <span>
+                Saldo remanescente
+                <span className="block text-muted">Do mês anterior registrado</span>
+              </span>
+              <span className="font-semibold tabular-nums text-teal">{formatBRL(result.carriedForward)}</span>
+            </li>
+          )}
           {[...incomes]
             .sort((a, b) => (dates[a.id] ?? '9999').localeCompare(dates[b.id] ?? '9999'))
             .map((income) => {

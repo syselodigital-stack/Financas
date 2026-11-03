@@ -120,6 +120,13 @@ export function yearOf(monthKey: string): number {
   return Number(monthKey.slice(0, 4))
 }
 
+/** Mês imediatamente anterior a `YYYY-MM` (cruza o ano). */
+export function previousMonthKey(monthKey: string): string {
+  const [year, month] = monthKey.split('-').map(Number)
+  const date = new Date(year, month - 2, 1)
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+}
+
 export function monthsOfYear(year: number): string[] {
   return MONTH_SHORT.map((_, index) => `${year}-${String(index + 1).padStart(2, '0')}`)
 }

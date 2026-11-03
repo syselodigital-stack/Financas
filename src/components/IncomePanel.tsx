@@ -6,6 +6,7 @@ import type { IncomeSource } from '../lib/types'
 interface IncomePanelProps {
   incomes: IncomeSource[]
   total: number
+  carriedForward?: number
   month: string
   dates: Record<string, string>
   onAmount: (id: string, amount: number) => void
@@ -15,7 +16,18 @@ interface IncomePanelProps {
   onRemove: (id: string) => void
 }
 
-export function IncomePanel({ incomes, total, month, dates, onAmount, onHolder, onDate, onAdd, onRemove }: IncomePanelProps) {
+export function IncomePanel({
+  incomes,
+  total,
+  carriedForward = 0,
+  month,
+  dates,
+  onAmount,
+  onHolder,
+  onDate,
+  onAdd,
+  onRemove,
+}: IncomePanelProps) {
   const count = useRef(incomes.length)
   const fixed = incomes.filter((income) => !income.custom)
   const extras = incomes.filter((income) => income.custom)
@@ -35,7 +47,7 @@ export function IncomePanel({ incomes, total, month, dates, onAmount, onHolder, 
         <div>
           <h2 className="font-serif text-2xl">Entradas de caixa</h2>
           <p className="mt-1 max-w-xl text-sm text-muted">
-            Os salários ficam aqui. Cada serviço incluído vai para a lista ao lado, com descrição, valor e a data deste mês.
+            Os salários ficam aqui. A sobra positiva do mês anterior registrado entra automaticamente no total.
           </p>
         </div>
         <p className="text-right">
@@ -43,6 +55,16 @@ export function IncomePanel({ incomes, total, month, dates, onAmount, onHolder, 
           <span className="font-serif text-2xl">{formatBRL(total)}</span>
         </p>
       </div>
+
+      {carriedForward > 0 && (
+        <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl bg-sage/15 px-4 py-3 ring-1 ring-sage/30">
+          <div>
+            <p className="text-xs font-bold tracking-wide text-muted uppercase">Saldo remanescente</p>
+            <p className="text-sm text-muted">Sobra do mês anterior registrado</p>
+          </div>
+          <p className="font-serif text-2xl tabular-nums text-teal-deep">{formatBRL(carriedForward)}</p>
+        </div>
+      )}
 
       <div className="mt-5 grid items-start gap-4 md:grid-cols-[minmax(0,1fr)_minmax(22rem,0.9fr)]">
         <div className="space-y-4">
