@@ -114,9 +114,15 @@ export interface AllocationLine {
 
 export interface AllocationResult {
   lines: AllocationLine[]
-  totalIncome: number
-  /** Sobra positiva do mês anterior registrado, agregada ao caixa deste mês. */
+  /** Soma das rendas do mês ativo (sem transitado). */
+  monthIncome: number
+  /**
+   * Saldo do mês anterior registrado: positivo = sobra transitada;
+   * negativo = déficit (sombra) a cobrir como prioridade.
+   */
   carriedForward: number
+  /** Recurso disponível para abatimento: monthIncome + max(0, carriedForward). */
+  totalIncome: number
   totalDue: number
   totalAllocated: number
   sobra: number

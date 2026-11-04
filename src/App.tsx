@@ -246,8 +246,10 @@ export default function App() {
     setState(upsertClosing(state, snapshot))
     setNotice(
       snapshot.sobra > 0
-        ? `${monthLabel(state.activeMonth)} registrado. A sobra de ${formatBRL(snapshot.sobra)} fica disponível no próximo mês e entra na projeção do fundo.`
-        : `${monthLabel(state.activeMonth)} registrado. Sem sobra positiva para carregar ao próximo mês.`,
+        ? `${monthLabel(state.activeMonth)} registrado. Sobra de ${formatBRL(snapshot.sobra)} vira Saldo Anterior Transitado no próximo mês.`
+        : snapshot.sombra > 0
+          ? `${monthLabel(state.activeMonth)} registrado. Déficit de ${formatBRL(snapshot.sombra)} vira saldo devedor acumulado no próximo mês.`
+          : `${monthLabel(state.activeMonth)} registrado. Sem saldo a transitar para o próximo mês.`,
     )
   }
 
@@ -292,7 +294,7 @@ export default function App() {
               onClick={registerMonth}
               className="rounded-full bg-[#e8c27a] px-4 py-3 text-sm font-bold text-teal-deep"
             >
-              {registered ? 'Atualizar registro' : 'Registrar entrada'} de {formatBRL(result.totalIncome)}
+              {registered ? 'Atualizar registro' : 'Registrar entrada'} · receita {formatBRL(result.monthIncome)}
             </button>
           </div>
         </div>

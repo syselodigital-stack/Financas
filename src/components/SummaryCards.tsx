@@ -9,10 +9,41 @@ interface SummaryCardsProps {
 
 export function SummaryCards({ result, incomes, dates }: SummaryCardsProps) {
   const pending = result.lines.filter((line) => line.status === 'pending')
-  const uncovered = result.lines.filter((line) => line.uncovered > 0)
+  const uncovered = result.lines.filter((line) => line.uncovered > 0 && line.expense.id !== 'saldo-devedor-acumulado')
+  const carried = result.carriedForward
+  const transitPositive = carried > 0
+  const transitDeficit = carried < 0
 
   return (
     <section className="grid gap-3 md:grid-cols-2" aria-label="Cartões de saldo">
+      {transitPositive && (
+        <article className="rounded-3xl bg-sage/15 p-5 ring-1 ring-sage/30 md:col-span-2 md:p-6">
+          <p className="text-xs font-bold tracking-[0.16em] text-teal uppercase">Saldo Anterior Transitado</p>
+          <p className="mt-3 font-serif text-4xl tracking-tight text-teal-deep md:text-5xl">
+            {formatBRL(carried)}
+          </p>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-muted">
+            Sobra do mês anterior registrado. Entra no recurso disponível para abater as contas deste mês.
+          </p>
+        </article>
+      )}
+
+      {transitDeficit && (
+        <article
+          className="rounded-3xl bg-alert-soft p-5 ring-1 ring-[#f3c2cb] md:col-span-2 md:p-6"
+          role="alert"
+        >
+          <p className="text-xs font-bold tracking-[0.16em] text-alert uppercase">Saldo devedor acumulado</p>
+          <p className="mt-3 font-serif text-4xl tracking-tight text-ink md:text-5xl">
+            {formatBRL(Math.abs(carried))}
+          </p>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-muted">
+            Déficit do mês anterior registrado. Entra como prioridade no abatimento deste mês, antes das demais
+            contas.
+          </p>
+        </article>
+      )}
+
       <article
         className={`rounded-3xl p-5 ring-1 md:p-6 ${
           result.sobra > 0 ? 'bg-gold-soft ring-[#efd7a8]' : 'bg-card ring-line'
@@ -23,7 +54,7 @@ export function SummaryCards({ result, incomes, dates }: SummaryCardsProps) {
         <p className="mt-3 max-w-md text-sm leading-6 text-muted">
           {result.sobra > 0
             ? 'Saldo depois de cobrir as contas e os lançamentos do dia. Ao registrar o mês, segue para o próximo e alimenta o fundo.'
-            : 'A receita foi toda consumida. Nada passa para o próximo mês nem para o fundo.'}
+            : 'A receita foi toda consumida. Nada positivo passa para o próximo mês nem para o fundo.'}
         </p>
       </article>
 
@@ -36,7 +67,7 @@ export function SummaryCards({ result, incomes, dates }: SummaryCardsProps) {
         <p className="mt-3 font-serif text-4xl tracking-tight text-ink md:text-5xl">{formatBRL(result.sombra)}</p>
         <p className="mt-3 text-sm leading-6 text-muted">
           {result.sombra > 0
-            ? 'Obrigações que a receita não conseguiu cobrir.'
+            ? 'Obrigações que o recurso disponível não conseguiu cobrir neste mês.'
             : 'Nenhuma obrigação com valor informado ficou descoberta.'}
         </p>
         {uncovered.length > 0 && (
@@ -52,18 +83,30 @@ export function SummaryCards({ result, incomes, dates }: SummaryCardsProps) {
       </article>
 
       <article className="rounded-3xl bg-card p-5 ring-1 ring-line">
-        <p className="text-xs font-bold tracking-[0.16em] text-muted uppercase">Total de receita</p>
-        <p className="mt-2 font-serif text-3xl">{formatBRL(result.totalIncome)}</p>
-        <ul className="mt-4 space-y-2 text-sm">
-          {result.carriedForward > 0 && (
-            <li className="flex items-center justify-between gap-3">
-              <span>
-                Saldo remanescente
-                <span className="block text-muted">Do mês anterior registrado</span>
-              </span>
-              <span className="font-semibold tabular-nums text-teal">{formatBRL(result.carriedForward)}</span>
-            </li>
-          )}
+        <p className="text-xs font-bold tracking-[0.16em] text-muted uppercase">Resumo do caixa</p>
+        <dl className="mt-4 space-y-3 text-sm">
+          <div className="flex items-baseline justify-between gap-3">
+            <dt className="text-muted">Receita do mês</dt>
+            <dd className="font-serif text-2xl tabular-nums">{formatBRL(result.monthIncome)}</dd>
+          </div>
+          <div className="flex items-baseline justify-between gap-3 border-t border-line pt-3">
+            <dt className="text-muted">
+              {transitDeficit ? 'Saldo devedor acumulado' : 'Saldo Anterior Transitado'}
+            </dt>
+            <dd
+              className={`font-semibold tabular-nums ${
+                transitDeficit ? 'text-alert' : transitPositive ? 'text-teal' : 'text-ink'
+              }`}
+            >
+              {transitDeficit ? `−${formatBRL(Math.abs(carried))}` : formatBRL(Math.max(0, carried))}
+            </dd>
+          </div>
+          <div className="flex items-baseline justify-between gap-3 border-t border-line pt-3">
+            <dt className="font-semibold text-ink">Recurso total disponível</dt>
+            <dd className="font-serif text-2xl tabular-nums text-teal-deep">{formatBRL(result.totalIncome)}</dd>
+          </div>
+        </dl>
+        <ul className="mt-4 space-y-2 border-t border-line pt-4 text-sm">
           {[...incomes]
             .sort((a, b) => (dates[a.id] ?? '9999').localeCompare(dates[b.id] ?? '9999'))
             .map((income) => {

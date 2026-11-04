@@ -2,12 +2,26 @@ import type { AllocationResult, AppState, DailyExpense, ExpenseItem, MonthClosin
 import { fromCents, monthsOfYear, monthLabel, monthShort, previousMonthKey, toCents, yearOf } from './money'
 import { sortedCategories } from './defaults'
 
-/** Sobra positiva do fechamento do mês anterior (0 se o mês ainda não foi registrado). */
-export function carriedForwardSobra(closings: MonthClosing[] | undefined, activeMonth: string): number {
+export const CARRYOVER_DEBT_ID = 'saldo-devedor-acumulado'
+
+/**
+ * Saldo transitado do mês anterior registrado.
+ * Positivo = sobra; negativo = sombra (déficit) a cobrir; 0 se não houver fechamento.
+ */
+export function carriedForwardBalance(closings: MonthClosing[] | undefined, activeMonth: string): number {
   const previous = previousMonthKey(activeMonth)
   const closing = (closings ?? []).find((item) => item.month === previous)
   if (!closing) return 0
-  return fromCents(Math.max(0, toCents(closing.sobra)))
+  const sobraCents = toCents(closing.sobra)
+  if (sobraCents > 0) return fromCents(sobraCents)
+  const sombraCents = toCents(closing.sombra)
+  if (sombraCents > 0) return fromCents(-sombraCents)
+  return 0
+}
+
+/** @deprecated use carriedForwardBalance */
+export function carriedForwardSobra(closings: MonthClosing[] | undefined, activeMonth: string): number {
+  return Math.max(0, carriedForwardBalance(closings, activeMonth))
 }
 
 function dailyCentsByCategory(entries: DailyExpense[], month: string): Map<string, number> {
@@ -67,10 +81,25 @@ export function allocate(
     })
   }
 
-  const carriedForward = carriedForwardSobra(state.closings, state.activeMonth)
-  const totalIncomeCents =
-    state.incomes.reduce((sum, income) => sum + toCents(income.amount), 0) + toCents(carriedForward)
-  let balance = totalIncomeCents
+  const carriedForward = carriedForwardBalance(state.closings, state.activeMonth)
+  const carriedCents = toCents(carriedForward)
+  const monthIncomeCents = state.incomes.reduce((sum, income) => sum + toCents(income.amount), 0)
+  const availableCents = monthIncomeCents + Math.max(0, carriedCents)
+
+  if (carriedCents < 0) {
+    const debtCategory =
+      categories.find((item) => item.priority_level === 1)?.id ?? categories[0]?.id ?? 'cat-contas'
+    expenses.unshift({
+      id: CARRYOVER_DEBT_ID,
+      name: 'Saldo devedor acumulado',
+      detail: 'Déficit do mês anterior registrado',
+      amount: fromCents(-carriedCents),
+      priority: 1,
+      categoryId: debtCategory,
+    })
+  }
+
+  let balance = availableCents
   let totalDue = 0
   let totalAllocated = 0
   let sombra = 0
@@ -88,7 +117,7 @@ export function allocate(
         : 0
     const due = toCents(expense.amount) + extra
     totalDue += due
-    const locked = expense.id.startsWith('diarias-')
+    const locked = expense.id.startsWith('diarias-') || expense.id === CARRYOVER_DEBT_ID
 
     if (due === 0) {
       return {
@@ -133,8 +162,9 @@ export function allocate(
 
   return {
     lines,
-    totalIncome: fromCents(totalIncomeCents),
+    monthIncome: fromCents(monthIncomeCents),
     carriedForward,
+    totalIncome: fromCents(availableCents),
     totalDue: fromCents(totalDue),
     totalAllocated: fromCents(totalAllocated),
     sobra,
@@ -146,7 +176,7 @@ export function allocate(
 export function upsertClosing(state: AppState, result: AllocationResult): AppState {
   const closing: MonthClosing = {
     month: state.activeMonth,
-    income: result.totalIncome,
+    income: result.monthIncome,
     committed: result.totalAllocated,
     sobra: result.sobra,
     sombra: result.sombra,
