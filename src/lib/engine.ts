@@ -1,4 +1,12 @@
-import type { AllocationResult, AppState, DailyExpense, ExpenseItem, MonthClosing, ProjectionPoint } from './types'
+import type {
+  AllocationResult,
+  AppState,
+  DailyExpense,
+  ExpenseItem,
+  ExpenseSettlement,
+  MonthClosing,
+  ProjectionPoint,
+} from './types'
 import { fromCents, monthsOfYear, monthLabel, monthShort, previousMonthKey, toCents, yearOf } from './money'
 import { sortedCategories } from './defaults'
 
@@ -33,6 +41,14 @@ function dailyCentsByCategory(entries: DailyExpense[], month: string): Map<strin
   return totals
 }
 
+function paidExpenseIds(settlements: ExpenseSettlement[] | undefined, month: string): Set<string> {
+  const paid = new Set<string>()
+  for (const item of settlements ?? []) {
+    if (item.month === month && item.paid) paid.add(item.expenseId)
+  }
+  return paid
+}
+
 function orderedExpenses(expenses: ExpenseItem[]): ExpenseItem[] {
   return expenses
     .map((expense, index) => ({ expense, index }))
@@ -40,12 +56,42 @@ function orderedExpenses(expenses: ExpenseItem[]): ExpenseItem[] {
     .map((item) => item.expense)
 }
 
+/**
+ * Abate apenas compromissos reais do mês ativo:
+ * - lançamentos do diário
+ * - contas do mapa marcadas como pagas neste mês
+ * - saldo devedor acumulado (déficit do fechamento anterior)
+ * Valores só previstos no mapa não consomem o caixa.
+ */
+function confirmedIncomeIds(
+  receipts: AppState['receipts'] | undefined,
+  month: string,
+): Set<string> {
+  const ids = new Set<string>()
+  for (const item of receipts ?? []) {
+    if (item.month === month && item.incomeId) ids.add(item.incomeId)
+  }
+  return ids
+}
+
 export function allocate(
-  state: Pick<AppState, 'categories' | 'incomes' | 'expenses' | 'dailyExpenses' | 'activeMonth' | 'closings'>,
+  state: Pick<
+    AppState,
+    | 'categories'
+    | 'incomes'
+    | 'expenses'
+    | 'dailyExpenses'
+    | 'activeMonth'
+    | 'closings'
+    | 'settlements'
+    | 'receipts'
+  >,
 ): AllocationResult {
   const dailyExpenses = state.dailyExpenses ?? []
   const categories = sortedCategories(state.categories ?? [])
   const dailyByCategory = dailyCentsByCategory(dailyExpenses, state.activeMonth)
+  const paidIds = paidExpenseIds(state.settlements, state.activeMonth)
+  const incomeConfirmed = confirmedIncomeIds(state.receipts, state.activeMonth)
   const expenses = state.expenses.map((expense) => ({ ...expense }))
   const claimed = new Set<string>()
 
@@ -83,7 +129,11 @@ export function allocate(
 
   const carriedForward = carriedForwardBalance(state.closings, state.activeMonth)
   const carriedCents = toCents(carriedForward)
-  const monthIncomeCents = state.incomes.reduce((sum, income) => sum + toCents(income.amount), 0)
+  // Renda do mês: só entradas com data confirmada neste mês (não herda automaticamente o mês anterior).
+  const monthIncomeCents = state.incomes.reduce((sum, income) => {
+    if (!incomeConfirmed.has(income.id)) return sum
+    return sum + toCents(income.amount)
+  }, 0)
   const availableCents = monthIncomeCents + Math.max(0, carriedCents)
 
   if (carriedCents < 0) {
@@ -102,29 +152,45 @@ export function allocate(
   let balance = availableCents
   let totalDue = 0
   let totalAllocated = 0
+  let plannedDue = 0
   let sombra = 0
 
   const lines = orderedExpenses(expenses).map((expense, index) => {
-    const hasPlannedMatch = !expense.id.startsWith('diarias-')
-    const extra =
-      hasPlannedMatch && dailyByCategory.has(expense.categoryId)
+    const isDaily = expense.id.startsWith('diarias-')
+    const isDebt = expense.id === CARRYOVER_DEBT_ID
+    const locked = isDaily || isDebt
+    const plannedCents = isDaily || isDebt ? 0 : toCents(expense.amount)
+
+    const dailyExtra =
+      !isDaily && !isDebt && dailyByCategory.has(expense.categoryId)
         ? (() => {
             const first = expenses.find(
-              (item) => item.categoryId === expense.categoryId && !item.id.startsWith('diarias-'),
+              (item) =>
+                item.categoryId === expense.categoryId &&
+                !item.id.startsWith('diarias-') &&
+                item.id !== CARRYOVER_DEBT_ID,
             )
             return first?.id === expense.id ? (dailyByCategory.get(expense.categoryId) ?? 0) : 0
           })()
         : 0
-    const due = toCents(expense.amount) + extra
-    totalDue += due
-    const locked = expense.id.startsWith('diarias-') || expense.id === CARRYOVER_DEBT_ID
 
-    if (due === 0) {
+    // Só consome caixa: diário, déficit transitado, ou conta marcada como paga neste mês.
+    const cashDue =
+      isDaily || isDebt ? toCents(expense.amount) : (paidIds.has(expense.id) ? plannedCents : 0) + dailyExtra
+
+    if (!isDaily && !isDebt && !paidIds.has(expense.id) && plannedCents > 0) {
+      plannedDue += plannedCents
+    }
+
+    totalDue += cashDue
+    const displayDue = isDaily || isDebt ? cashDue : plannedCents + dailyExtra
+
+    if (cashDue === 0) {
       return {
         expense,
         order: index + 1,
-        due: 0,
-        dailyAmount: fromCents(extra),
+        due: fromCents(displayDue),
+        dailyAmount: fromCents(dailyExtra),
         locked,
         allocated: 0,
         uncovered: 0,
@@ -133,21 +199,21 @@ export function allocate(
       }
     }
 
-    const allocated = Math.min(balance, due)
+    const allocated = Math.min(balance, cashDue)
     balance -= allocated
     totalAllocated += allocated
-    const uncovered = due - allocated
+    const uncovered = cashDue - allocated
     sombra += uncovered
 
     let status: AllocationResult['lines'][number]['status'] = 'uncovered'
-    if (allocated === due) status = 'covered'
+    if (allocated === cashDue) status = 'covered'
     else if (allocated > 0) status = 'partial'
 
     return {
       expense,
       order: index + 1,
-      due: fromCents(due),
-      dailyAmount: fromCents(extra),
+      due: fromCents(isDaily || isDebt ? cashDue : Math.max(displayDue, cashDue)),
+      dailyAmount: fromCents(dailyExtra),
       locked,
       allocated: fromCents(allocated),
       uncovered: fromCents(uncovered),
@@ -167,6 +233,7 @@ export function allocate(
     totalIncome: fromCents(availableCents),
     totalDue: fromCents(totalDue),
     totalAllocated: fromCents(totalAllocated),
+    plannedDue: fromCents(plannedDue),
     sobra,
     sombra: fromCents(sombra),
     coverageRate,
@@ -187,6 +254,10 @@ export function upsertClosing(state: AppState, result: AllocationResult): AppSta
   return { ...state, closings }
 }
 
+/**
+ * Fundo: só soma sobras registradas. A sobra ao vivo do mês ativo aparece só naquele mês;
+ * meses futuros sem fechamento não herdam projeção fictícia.
+ */
 export function projectYear(
   activeMonth: string,
   opening: number,
@@ -199,7 +270,17 @@ export function projectYear(
 
   return monthsOfYear(year).map((month) => {
     const closing = closings.find((item) => item.month === month)
-    const sobraCents = closing ? Math.max(0, toCents(closing.sobra)) : positiveLive
+    let sobraCents = 0
+    let kind: ProjectionPoint['kind'] = 'projetado'
+
+    if (closing) {
+      sobraCents = Math.max(0, toCents(closing.sobra))
+      kind = 'registrado'
+    } else if (month === activeMonth) {
+      sobraCents = positiveLive
+      kind = 'projetado'
+    }
+
     reserveCents += sobraCents
 
     return {
@@ -208,7 +289,7 @@ export function projectYear(
       shortLabel: monthShort(month),
       sobra: fromCents(sobraCents),
       reserve: fromCents(reserveCents),
-      kind: closing ? 'registrado' : 'projetado',
+      kind,
     }
   })
 }

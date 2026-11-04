@@ -76,8 +76,8 @@ export function AllocationBoard({
           <div>
             <h2 className="font-serif text-2xl">Abatimento automático</h2>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">
-              Contas e lançamentos do dia ficam agrupados pelas categorias cadastradas, com o nível de prioridade de cada
-              uma.
+              O mapa mostra o previsto. O caixa só é consumido por lançamentos do diário ou contas marcadas como pagas
+              neste mês — valores futuros não confirmados não abatem o saldo.
             </p>
           </div>
           <div className="flex flex-col items-start gap-2 md:items-end">

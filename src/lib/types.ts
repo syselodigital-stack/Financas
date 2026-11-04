@@ -121,10 +121,17 @@ export interface AllocationResult {
    * negativo = déficit (sombra) a cobrir como prioridade.
    */
   carriedForward: number
-  /** Recurso disponível para abatimento: monthIncome + max(0, carriedForward). */
+  /**
+   * Disponível real para alocação antes de compromissos do mês:
+   * monthIncome + max(0, carriedForward).
+   */
   totalIncome: number
+  /** Soma só do que está confirmado no mês (diário e/ou marcado pago). */
   totalDue: number
+  /** Quanto do disponível já cobriu esses compromissos reais. */
   totalAllocated: number
+  /** Mapa previsto (valores do cadastro) ainda não confirmados no mês — não consome caixa. */
+  plannedDue: number
   sobra: number
   sombra: number
   coverageRate: number

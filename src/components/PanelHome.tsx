@@ -55,9 +55,15 @@ export function PanelHome({
           }
         />
         <StatusTile
-          label="Fundo"
-          value={registered ? 'Mês registrado' : 'Ainda aberto'}
-          detail={result.sobra > 0 ? `Sobra ${formatBRL(result.sobra)}` : 'Sem aporte neste mês'}
+          label="Disponível real"
+          value={formatBRL(result.sobra)}
+          detail={
+            result.totalAllocated > 0
+              ? `Comprometido ${formatBRL(result.totalAllocated)}${registered ? ' · mês registrado' : ''}`
+              : registered
+                ? 'Mês registrado · sem lançamentos ativos'
+                : 'Sem lançamentos ativos no mês'
+          }
         />
       </section>
       <div className="flex flex-col gap-2 sm:flex-row">

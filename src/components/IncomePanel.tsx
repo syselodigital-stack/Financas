@@ -47,8 +47,8 @@ export function IncomePanel({
         <div>
           <h2 className="font-serif text-2xl">Entradas de caixa</h2>
           <p className="mt-1 max-w-xl text-sm text-muted">
-            Os salários ficam aqui. O saldo do mês anterior registrado (positivo ou déficit) aparece separado do
-            total disponível.
+            Informe a data de cada entrada neste mês para incluí-la no caixa. Sem data, o valor não conta — a
+            entrada de um mês não passa automaticamente para o seguinte.
           </p>
         </div>
         <p className="text-right">
@@ -84,10 +84,21 @@ export function IncomePanel({
         <div className="space-y-4">
           {fixed.map((income) => {
             const name = income.holder || income.label
+            const confirmed = Boolean(dates[income.id])
             return (
-              <div key={income.id} className="grid gap-3 rounded-2xl bg-paper/70 p-3 sm:grid-cols-2 sm:items-end">
+              <div
+                key={income.id}
+                className={`grid gap-3 rounded-2xl p-3 sm:grid-cols-2 sm:items-end ${
+                  confirmed ? 'bg-paper/70 ring-1 ring-sage/25' : 'bg-paper/70 ring-1 ring-line'
+                }`}
+              >
                 <label className="block sm:col-span-2">
-                  <span className="mb-1 block text-xs font-semibold tracking-wide text-muted uppercase">{income.label}</span>
+                  <span className="mb-1 flex items-center justify-between gap-2 text-xs font-semibold tracking-wide text-muted uppercase">
+                    <span>{income.label}</span>
+                    <span className={confirmed ? 'text-teal' : 'text-gold'}>
+                      {confirmed ? 'No caixa deste mês' : 'Sem data — fora do caixa'}
+                    </span>
+                  </span>
                   <input
                     value={income.holder}
                     aria-label={`Origem de ${income.label}`}
